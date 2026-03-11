@@ -1,0 +1,336 @@
+package ui
+
+import (
+	"fmt"
+
+	"github.com/charmbracelet/bubbles/spinner"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/tobiaswadsethdev/anvil.nvim/cmd/jira-anvil/api"
+	"github.com/tobiaswadsethdev/anvil.nvim/cmd/jira-anvil/config"
+)
+
+// State represents the current TUI view.
+type State int
+
+const (
+	StateList       State = iota // issue list
+	StateDetail                  // issue detail
+	StateTransition              // transition modal
+	StateComment                 // comment modal
+	StateAssign                  // assign modal
+	StateEdit                    // field editor (external $EDITOR)
+)
+
+// Model is the root bubbletea model.
+type Model struct {
+	cfg          *config.Config
+	client       *api.Client
+	state        State
+	filterIndex  int
+	width        int
+	height       int
+	err          error
+	statusMsg    string
+
+	// Sub-models
+	list       ListModel
+	detail     DetailModel
+	transition TransitionModel
+	comment    CommentModel
+	assign     AssignModel
+}
+
+// --- Messages ---
+
+type errMsg struct{ err error }
+type statusMsg struct{ text string }
+type windowSizeMsg struct{ w, h int }
+
+func (e errMsg) Error() string { return e.err.Error() }
+
+// NewModel creates the root model.
+func NewModel(cfg *config.Config, client *api.Client) Model {
+	sp := spinner.New()
+	sp.Spinner = spinner.Dot
+	sp.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+
+	m := Model{
+		cfg:    cfg,
+		client: client,
+		state:  StateList,
+	}
+	m.list = NewListModel(cfg, client, sp)
+	return m
+}
+
+// Init kicks off the initial data load.
+func (m Model) Init() tea.Cmd {
+	return tea.Batch(
+		m.list.spinner.Tick,
+		m.list.fetchCmd(),
+	)
+}
+
+// Update handles all messages.
+func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		m.list = m.list.setSize(msg.Width, msg.Height)
+		m.detail = m.detail.setSize(msg.Width, msg.Height)
+		return m, nil
+
+	case tea.KeyMsg:
+		return m.handleKey(msg)
+
+	case issuesFetchedMsg:
+		m.list.loading = false
+		m.list.issues = msg.issues
+		m.list.total = msg.total
+		m.list.buildTable()
+		m.statusMsg = fmt.Sprintf("%d issues", msg.total)
+		return m, nil
+
+	case issueFetchedMsg:
+		m.detail = NewDetailModel(msg.issue, m.width, m.height)
+		m.state = StateDetail
+		return m, nil
+
+	case transitionsDoneMsg:
+		m.statusMsg = "Transitioned successfully"
+		m.state = StateDetail
+		return m.reloadDetail()
+
+	case commentDoneMsg:
+		m.statusMsg = "Comment added"
+		m.state = StateDetail
+		return m.reloadDetail()
+
+	case assignDoneMsg:
+		m.statusMsg = "Assigned successfully"
+		m.state = StateDetail
+		return m.reloadDetail()
+
+	case editDoneMsg:
+		m.statusMsg = "Updated successfully"
+		m.state = StateDetail
+		return m.reloadDetail()
+
+	case transitionsLoadedMsg:
+		m.transition = NewTransitionModel(msg.transitions, msg.issueKey)
+		m.state = StateTransition
+		return m, nil
+
+	case assignableUsersLoadedMsg:
+		m.assign = NewAssignModel(msg.users, msg.issueKey)
+		m.state = StateAssign
+		return m, nil
+
+	case execEditorMsg:
+		return m, MakeExecEditorCmd(msg)
+
+	case errMsg:
+		m.err = msg.err
+		m.list.loading = false
+		return m, nil
+
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.list.spinner, cmd = m.list.spinner.Update(msg)
+		return m, cmd
+	}
+
+	// Delegate to sub-models
+	return m.updateSubModel(msg)
+}
+
+func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Global quit
+	if msg.String() == "ctrl+c" {
+		return m, tea.Quit
+	}
+
+	switch m.state {
+	case StateList:
+		return m.handleListKey(msg)
+	case StateDetail:
+		return m.handleDetailKey(msg)
+	case StateTransition:
+		return m.handleTransitionKey(msg)
+	case StateComment:
+		return m.handleCommentKey(msg)
+	case StateAssign:
+		return m.handleAssignKey(msg)
+	}
+	return m, nil
+}
+
+func (m Model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q":
+		return m, tea.Quit
+	case "]":
+		m.filterIndex = (m.filterIndex + 1) % len(m.cfg.Filters)
+		m.list.filterIndex = m.filterIndex
+		m.list.loading = true
+		return m, tea.Batch(m.list.spinner.Tick, m.list.fetchCmd())
+	case "[":
+		m.filterIndex = (m.filterIndex - 1 + len(m.cfg.Filters)) % len(m.cfg.Filters)
+		m.list.filterIndex = m.filterIndex
+		m.list.loading = true
+		return m, tea.Batch(m.list.spinner.Tick, m.list.fetchCmd())
+	case "r":
+		m.list.loading = true
+		return m, tea.Batch(m.list.spinner.Tick, m.list.fetchCmd())
+	case "o":
+		if issue := m.list.selectedIssue(); issue != nil {
+			openBrowser(m.cfg.Jira.URL + "/browse/" + issue.Key)
+		}
+		return m, nil
+	case "enter":
+		if issue := m.list.selectedIssue(); issue != nil {
+			return m, fetchIssueCmd(m.client, issue.Key)
+		}
+		return m, nil
+	case "?":
+		m.statusMsg = listHelp
+		return m, nil
+	}
+
+	// Pass to list table for navigation
+	var cmd tea.Cmd
+	m.list, cmd = m.list.update(msg)
+	return m, cmd
+}
+
+func (m Model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q", "esc":
+		m.state = StateList
+		return m, nil
+	case "r":
+		return m.reloadDetail()
+	case "o":
+		openBrowser(m.cfg.Jira.URL + "/browse/" + m.detail.issue.Key)
+		return m, nil
+	case "t":
+		return m, loadTransitionsCmd(m.client, m.detail.issue.Key)
+	case "c":
+		m.comment = NewCommentModel(m.detail.issue.Key)
+		m.state = StateComment
+		return m, m.comment.Init()
+	case "a":
+		return m, loadAssignableUsersCmd(m.client, m.detail.issue.Key)
+	case "e":
+		return m, startEditCmd(m.detail.issue, m.client)
+	case "?":
+		m.statusMsg = detailHelp
+		return m, nil
+	}
+
+	// Pass to viewport for scrolling
+	var cmd tea.Cmd
+	m.detail, cmd = m.detail.update(msg)
+	return m, cmd
+}
+
+func (m Model) handleTransitionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q", "esc":
+		m.state = StateDetail
+		return m, nil
+	}
+	var cmd tea.Cmd
+	var done bool
+	m.transition, cmd, done = m.transition.update(msg, m.client)
+	if done {
+		m.state = StateDetail
+		return m.reloadDetail()
+	}
+	return m, cmd
+}
+
+func (m Model) handleCommentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.state = StateDetail
+		return m, nil
+	}
+	var cmd tea.Cmd
+	var done bool
+	m.comment, cmd, done = m.comment.update(msg, m.client)
+	if done {
+		m.state = StateDetail
+	}
+	return m, cmd
+}
+
+func (m Model) handleAssignKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q", "esc":
+		m.state = StateDetail
+		return m, nil
+	}
+	var cmd tea.Cmd
+	var done bool
+	m.assign, cmd, done = m.assign.update(msg, m.client)
+	if done {
+		m.state = StateDetail
+		return m.reloadDetail()
+	}
+	return m, cmd
+}
+
+func (m Model) updateSubModel(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch m.state {
+	case StateList:
+		var cmd tea.Cmd
+		m.list, cmd = m.list.update(msg)
+		return m, cmd
+	case StateDetail:
+		var cmd tea.Cmd
+		m.detail, cmd = m.detail.update(msg)
+		return m, cmd
+	}
+	return m, nil
+}
+
+func (m Model) reloadDetail() (tea.Model, tea.Cmd) {
+	if m.detail.issue.Key == "" {
+		m.state = StateList
+		return m, nil
+	}
+	return m, fetchIssueCmd(m.client, m.detail.issue.Key)
+}
+
+// View renders the current state.
+func (m Model) View() string {
+	if m.err != nil {
+		return errorStyle.Render("Error: " + m.err.Error() + "\n\nPress q to quit.")
+	}
+
+	switch m.state {
+	case StateList:
+		return m.list.view()
+	case StateDetail:
+		return m.detail.view()
+	case StateTransition:
+		return m.renderOverlay(m.list.view(), m.transition.view())
+	case StateComment:
+		return m.renderOverlay(m.detail.view(), m.comment.view())
+	case StateAssign:
+		return m.renderOverlay(m.detail.view(), m.assign.view())
+	}
+	return ""
+}
+
+func (m Model) renderOverlay(base, modal string) string {
+	return lipgloss.JoinVertical(lipgloss.Left, base, modal)
+}
+
+// Help strings
+const listHelp = "↑/↓: navigate  Enter: open  [/]: cycle filter  r: refresh  o: browser  q: quit"
+const detailHelp = "↑/↓: scroll  t: transition  c: comment  a: assign  e: edit  o: browser  q: back"
