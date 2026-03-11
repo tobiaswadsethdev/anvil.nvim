@@ -1,41 +1,37 @@
-# Compiled Lua sources
+# ── Compiled Lua ─────────────────────────────────────────────────────────────
 luac.out
 
-# luarocks build files
+# ── luarocks ─────────────────────────────────────────────────────────────────
 *.src.rock
 *.zip
 *.tar.gz
 
-# Object files
-*.o
-*.os
-*.ko
-*.obj
-*.elf
+# ── Go build artefacts ────────────────────────────────────────────────────────
+# Built binaries (produced by `make build`)
+bin/jira-anvil
+bin/azdo-anvil
 
-# Precompiled Headers
-*.gch
-*.pch
-
-# Libraries
-*.lib
-*.a
-*.la
-*.lo
-*.def
-*.exp
-
-# Shared objects (inc. Windows DLLs)
-*.dll
-*.so
-*.so.*
-*.dylib
-
-# Executables
-*.exe
+# Go test cache / coverage
+*.test
 *.out
-*.app
-*.i*86
-*.x86_64
-*.hex
+coverage.txt
 
+# ── Editor / IDE ──────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Secrets ───────────────────────────────────────────────────────────────────
+# Never commit config files containing API tokens
+# ~/.config/anvil/config.yaml is outside the repo anyway,
+# but guard against accidental copies:
+config.yaml
+*.token
+.env
+.env.*

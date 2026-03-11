@@ -1,0 +1,196 @@
+*anvil.txt*  Jira TUI for Neovim via snacks.nvim
+
+Author:   Tobias
+License:  Apache 2.0
+Homepage: https://github.com/tobiaswadsethdev/anvil.nvim
+
+==============================================================================
+CONTENTS                                                        *anvil-contents*
+
+  1. Introduction .............. |anvil-intro|
+  2. Requirements .............. |anvil-requirements|
+  3. Installation .............. |anvil-installation|
+  4. Configuration ............. |anvil-config|
+  5. Usage ..................... |anvil-usage|
+  6. Keybindings ............... |anvil-keybindings|
+  7. Commands .................. |anvil-commands|
+  8. Health check .............. |anvil-health|
+
+==============================================================================
+INTRODUCTION                                                       *anvil-intro*
+
+anvil.nvim provides a Terminal UI (TUI) for browsing and administering Jira
+Cloud issues directly inside Neovim. It works by launching the `jira-anvil`
+Go binary in a snacks.nvim floating terminal — the same pattern used by
+lazygit.
+
+Features:
+  • Browse issues via named JQL filters (cycle with [ / ])
+  • Issue detail view with ADF description rendering
+  • Transition issue status
+  • Add comments (Markdown → ADF)
+  • Assign issues to team members
+  • Edit description and ADF custom fields in $EDITOR
+  • Open issues in browser
+
+==============================================================================
+REQUIREMENTS                                                *anvil-requirements*
+
+  • Neovim >= 0.9
+  • snacks.nvim (https://github.com/folke/snacks.nvim)
+  • jira-anvil binary (see |anvil-installation|)
+  • Jira Cloud account with API token
+
+==============================================================================
+INSTALLATION                                                *anvil-installation*
+
+Install the plugin with your package manager, then build the binary.
+
+With lazy.nvim: >lua
+  {
+    "tobiaswadsethdev/anvil.nvim",
+    build = "make install",
+    dependencies = { "folke/snacks.nvim" },
+    opts = {
+      jira = {
+        url   = "https://yourcompany.atlassian.net",
+        user  = "you@example.com",
+        token = vim.env.JIRA_API_TOKEN,
+      },
+      filters = {
+        { name = "My Issues", jql = "assignee = currentUser() ORDER BY updated DESC" },
+      },
+    },
+  }
+<
+
+Build the binary manually: >sh
+  cd ~/.local/share/nvim/lazy/anvil.nvim
+  make install
+<
+
+Or via go install: >sh
+  cd cmd/jira-anvil && go install .
+<
+
+Ensure ~/go/bin is in your PATH.
+
+==============================================================================
+CONFIGURATION                                                    *anvil-config*
+
+Call `require('anvil').setup()` with an options table:
+
+>lua
+  require('anvil').setup({
+    -- Jira Cloud connection
+    jira = {
+      url   = "https://yourcompany.atlassian.net",  -- required
+      user  = "you@example.com",                    -- required
+      token = vim.env.JIRA_API_TOKEN,               -- required (use env var!)
+    },
+
+    -- Named JQL filters (cycle through with [ and ] in the TUI)
+    filters = {
+      { name = "My Issues",  jql = "assignee = currentUser() AND status != Done ORDER BY updated DESC" },
+      { name = "My Sprint",  jql = "project = PROJ AND sprint in openSprints() ORDER BY priority ASC" },
+      { name = "Unassigned", jql = "project = PROJ AND assignee is EMPTY" },
+    },
+
+    -- Keymaps (set to "" to disable)
+    keymaps = {
+      open   = "<leader>jj",   -- open TUI
+      toggle = "<leader>jt",   -- toggle TUI
+    },
+
+    -- Explicit path to jira-anvil binary (optional, defaults to PATH search)
+    bin_path = nil,
+
+    -- Extra window options forwarded to Snacks.terminal (optional)
+    win = {},
+  })
+<
+
+Environment variables (override config values):
+  JIRA_URL         Jira base URL
+  JIRA_USER        Jira email address
+  JIRA_TOKEN       Jira API token
+
+==============================================================================
+USAGE                                                              *anvil-usage*
+
+Open the TUI: >
+  <leader>jj    (or :Anvil)
+<
+
+Toggle the TUI: >
+  <leader>jt    (or :AnvilToggle)
+<
+
+The config file is written to ~/.config/anvil/config.yaml on each open,
+so changes to your Neovim config take effect immediately.
+
+==============================================================================
+KEYBINDINGS                                                  *anvil-keybindings*
+
+Issue List view:~
+  [           Previous JQL filter
+  ]           Next JQL filter
+  ↑ / k       Move cursor up
+  ↓ / j       Move cursor down
+  Enter       Open issue detail
+  r           Refresh issues
+  o           Open issue in browser
+  ?           Show help
+  q / Ctrl+C  Quit
+
+Issue Detail view:~
+  ↑ / k       Scroll up
+  ↓ / j       Scroll down
+  t           Transition status
+  c           Add comment
+  a           Assign issue
+  e           Edit description / ADF fields in $EDITOR
+  o           Open in browser
+  r           Reload issue
+  ?           Show help
+  q / Esc     Back to list
+
+Transition modal:~
+  j / ↓       Navigate down
+  k / ↑       Navigate up
+  1-9         Select by number
+  Enter       Confirm transition
+  Esc         Cancel
+
+Comment modal:~
+  (type)      Write comment (Markdown supported)
+  Ctrl+S      Submit comment
+  Esc         Cancel
+
+Assign modal:~
+  (type)      Filter users
+  j / ↓       Navigate down
+  k / ↑       Navigate up
+  Enter       Confirm assignment
+  Esc         Cancel
+
+==============================================================================
+COMMANDS                                                        *anvil-commands*
+
+:Anvil                                                                  *:Anvil*
+  Open the Jira TUI.
+
+:AnvilToggle                                                      *:AnvilToggle*
+  Toggle the Jira TUI.
+
+==============================================================================
+HEALTH CHECK                                                      *anvil-health*
+
+Run `:checkhealth anvil` to verify:
+  • snacks.nvim is installed
+  • jira-anvil binary is on PATH
+  • Config file exists
+  • Jira connection settings are present
+
+==============================================================================
+vim:tw=78:ts=8:ft=help:norl:
