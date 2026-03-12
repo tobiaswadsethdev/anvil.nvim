@@ -17,7 +17,7 @@ function M.open(opts)
     return
   end
 
-  -- Regenerate config YAML on every open (like lazygit regenerates its theme)
+  -- Regenerate config YAML on every open so Neovim-side changes take effect
   config.write_yaml()
 
   local term_opts = vim.tbl_deep_extend("force", {

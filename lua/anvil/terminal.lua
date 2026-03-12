@@ -1,5 +1,5 @@
 --- anvil.nvim terminal — lightweight terminal window manager.
---- Replaces the snacks.nvim dependency with a native Neovim implementation.
+--- Manages terminal windows natively via the Neovim API.
 --- Supports floating, right-split, and bottom-split layouts.
 local M = {}
 

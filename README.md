@@ -1,6 +1,6 @@
 # anvil.nvim
 
-A Jira Cloud TUI for Neovim. Browse issues, manage transitions, review pull requests, and write comments without leaving your editor — powered by a `jira-anvil` Go binary launched in a terminal window (the same pattern as lazygit).
+A Jira Cloud TUI for Neovim. Browse issues, manage transitions, review pull requests, and write comments without leaving your editor — powered by a `jira-anvil` Go binary launched in a built-in terminal window.
 
 ## Features
 
@@ -185,7 +185,7 @@ The **Pull Request** tab shows:
   - `⏳` yellow — Waiting for author
   - `○` gray — No vote
 - **Changed files** list with change type indicators (A / M / D / R)
-- **Unified diff** rendered lazygit-style with colored `+`/`-` lines and `@@` hunk headers
+- **Unified diff** with colored `+`/`-` lines and `@@` hunk headers
 
 Switch between **Jira** and **Pull Request** tabs with `[` and `]`.
 

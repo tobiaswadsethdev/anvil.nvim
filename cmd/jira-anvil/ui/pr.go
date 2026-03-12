@@ -155,7 +155,7 @@ func renderPRContent(pr *api.PullRequest, build *api.Build, fileDiffs []api.File
 		}
 	}
 
-	// Diffs (lazygit-style)
+	// Diffs
 	hasDiffs := false
 	for _, fd := range fileDiffs {
 		if len(fd.Hunks) > 0 || fd.Binary {
@@ -171,7 +171,7 @@ func renderPRContent(pr *api.PullRequest, build *api.Build, fileDiffs []api.File
 				continue
 			}
 			sb.WriteString("\n")
-			// File header (lazygit-style)
+			// File header
 			fileHeader := lipgloss.NewStyle().
 				Foreground(colorSecond).
 				Bold(true).

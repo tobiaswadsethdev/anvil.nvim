@@ -23,8 +23,8 @@ INTRODUCTION                                                       *anvil-intro*
 
 anvil.nvim provides a Terminal UI (TUI) for browsing and administering Jira
 Cloud issues directly inside Neovim. It works by launching the `jira-anvil`
-Go binary in a terminal window — the same pattern used by lazygit. No
-external UI plugin is required.
+Go binary in a built-in Neovim terminal window. No external UI plugin is
+required.
 
 Features:
   • Browse issues via named JQL filters (cycle with [ / ])

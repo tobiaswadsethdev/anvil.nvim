@@ -1,5 +1,5 @@
 --- anvil.nvim — Jira TUI for Neovim
---- Launches the jira-anvil Go binary in a terminal window, similar to lazygit.
+--- Launches the jira-anvil Go binary in a built-in Neovim terminal window.
 ---
 --- Quick start:
 ---   require('anvil').setup({
