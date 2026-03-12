@@ -15,6 +15,7 @@ type PRDetailModel struct {
 	pr        *api.PullRequest
 	build     *api.Build
 	fileDiffs []api.FileDiff
+	reviewers []api.Reviewer
 	viewport  viewport.Model
 	loading   bool
 	notFound  bool
@@ -40,15 +41,22 @@ func prViewportHeight(h int) int {
 	return h - 7
 }
 
-func (m PRDetailModel) setData(pr *api.PullRequest, build *api.Build, fileDiffs []api.FileDiff) PRDetailModel {
+func (m PRDetailModel) setData(pr *api.PullRequest, build *api.Build, fileDiffs []api.FileDiff, reviewers []api.Reviewer) PRDetailModel {
 	m.loading = false
 	m.pr = pr
 	m.build = build
 	m.fileDiffs = fileDiffs
+	m.reviewers = reviewers
 	if pr == nil {
 		m.notFound = true
 	}
-	m.viewport.SetContent(renderPRContent(pr, build, fileDiffs, m.width))
+	m.viewport.SetContent(renderPRContent(pr, build, fileDiffs, reviewers, m.width))
+	return m
+}
+
+func (m PRDetailModel) setReviewers(reviewers []api.Reviewer) PRDetailModel {
+	m.reviewers = reviewers
+	m.viewport.SetContent(renderPRContent(m.pr, m.build, m.fileDiffs, reviewers, m.width))
 	return m
 }
 
@@ -65,7 +73,7 @@ func (m PRDetailModel) setSize(w, h int) PRDetailModel {
 	m.viewport.Width = w
 	m.viewport.Height = prViewportHeight(h)
 	if !m.loading && m.err == nil {
-		m.viewport.SetContent(renderPRContent(m.pr, m.build, m.fileDiffs, w))
+		m.viewport.SetContent(renderPRContent(m.pr, m.build, m.fileDiffs, m.reviewers, w))
 	}
 	return m
 }
@@ -81,7 +89,7 @@ func (m PRDetailModel) view() string {
 }
 
 // renderPRContent builds the full scrollable content for the PR tab.
-func renderPRContent(pr *api.PullRequest, build *api.Build, fileDiffs []api.FileDiff, width int) string {
+func renderPRContent(pr *api.PullRequest, build *api.Build, fileDiffs []api.FileDiff, reviewers []api.Reviewer, width int) string {
 	if pr == nil {
 		return lipgloss.NewStyle().
 			Foreground(colorMuted).
@@ -119,6 +127,20 @@ func renderPRContent(pr *api.PullRequest, build *api.Build, fileDiffs []api.File
 		}
 		if !build.StartTime.IsZero() {
 			writeField(&sb, "  Started", formatTime(build.StartTime))
+		}
+	}
+
+	// Reviewers
+	sb.WriteString("\n")
+	sb.WriteString(sectionStyle.Render("Reviewers") + "\n")
+	if len(reviewers) == 0 {
+		sb.WriteString("  " + lipgloss.NewStyle().Foreground(colorMuted).Render("No reviewers assigned") + "\n")
+	} else {
+		for _, r := range reviewers {
+			sb.WriteString(fmt.Sprintf("  %-30s %s\n",
+				lipgloss.NewStyle().Foreground(colorFg).Render(r.DisplayName),
+				colorVoteLabel(r.Vote),
+			))
 		}
 	}
 
@@ -242,5 +264,41 @@ func changeTypeLabel(ct string) string {
 		return "renamed"
 	default:
 		return ct
+	}
+}
+
+// colorVoteLabel returns a colored string for a reviewer's numeric vote.
+func colorVoteLabel(vote int) string {
+	switch vote {
+	case 10:
+		return lipgloss.NewStyle().Foreground(colorGreen).Bold(true).Render("✓ Approved")
+	case 5:
+		return lipgloss.NewStyle().Foreground(colorGreen).Render("✓ Approved with suggestions")
+	case 0:
+		return lipgloss.NewStyle().Foreground(colorMuted).Render("○ No vote")
+	case -5:
+		return lipgloss.NewStyle().Foreground(colorYellow).Render("⏳ Waiting for author")
+	case -10:
+		return lipgloss.NewStyle().Foreground(colorRed).Bold(true).Render("✗ Rejected")
+	default:
+		return lipgloss.NewStyle().Foreground(colorMuted).Render(fmt.Sprintf("? (%d)", vote))
+	}
+}
+
+// colorVoteOption returns a colored label for a vote option in the VoteModel.
+func colorVoteOption(label string, vote int) string {
+	switch vote {
+	case 10:
+		return lipgloss.NewStyle().Foreground(colorGreen).Bold(true).Render(label)
+	case 5:
+		return lipgloss.NewStyle().Foreground(colorGreen).Render(label)
+	case 0:
+		return lipgloss.NewStyle().Foreground(colorMuted).Render(label)
+	case -5:
+		return lipgloss.NewStyle().Foreground(colorYellow).Render(label)
+	case -10:
+		return lipgloss.NewStyle().Foreground(colorRed).Bold(true).Render(label)
+	default:
+		return label
 	}
 }

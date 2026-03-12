@@ -13,6 +13,7 @@ A Jira Cloud TUI for Neovim — browse and administer Jira issues via named JQL 
 - **Edit** — edit description and ADF custom fields in `$EDITOR`
 - **Browser** — open any issue in browser with `o`
 - **Azure DevOps PR tab** — linked pull request with git diff and pipeline status, displayed as a tab alongside the Jira issue
+- **PR voting** — view reviewer votes and cast your own vote (Approve / Reject / etc.) directly from the PR tab with `v`
 
 ## Requirements
 
@@ -124,6 +125,7 @@ Alternatively set environment variables: `JIRA_URL`, `JIRA_USER`, `JIRA_TOKEN`, 
 | `c`    | Add comment             |
 | `a`    | Assign issue            |
 | `e`    | Edit in `$EDITOR`       |
+| `v`    | Vote on PR (PR tab only)|
 | `o`    | Open in browser         |
 | `q/Esc`| Back to list            |
 
@@ -135,10 +137,29 @@ The **Pull Request** tab shows:
 
 - PR title, status (Active / Completed / Abandoned), author, and source → target branches
 - **Pipeline status** — latest Azure Pipelines run result (● In Progress / ✓ Succeeded / ✗ Failed / ○ Cancelled)
+- **Reviewer votes** — each reviewer's current vote with color indicators:
+  - ✓ green = Approved / Approved with suggestions
+  - ✗ red = Rejected
+  - ⏳ yellow = Waiting for author
+  - ○ gray = No vote
 - **Changed files** list with change type indicators (A added / M modified / D deleted / R renamed)
 - **Unified diff** for each file, rendered lazygit-style with colored `+`/`-` lines and `@@` hunk headers
 
 Switch between the **Jira** and **Pull Request** tabs with `[` and `]`.
+
+### Voting on a Pull Request
+
+Press `v` while on the Pull Request tab to open the voting modal:
+
+| Option                   | Vote value |
+|--------------------------|------------|
+| Approve                  | ✓ Approved |
+| Approve with suggestions | ✓ Approved with suggestions |
+| Reset vote               | ○ No vote  |
+| Wait for author          | ⏳ Waiting for author |
+| Reject                   | ✗ Rejected |
+
+Navigate with `j`/`k`, select with `Enter` or a number key, cancel with `Esc`. After voting, the reviewer list refreshes automatically to show your updated vote.
 
 ## Health Check
 

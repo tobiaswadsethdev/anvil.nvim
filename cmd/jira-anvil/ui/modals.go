@@ -252,3 +252,77 @@ func (m AssignModel) view() string {
 	))
 	return modalStyle.Render(sb.String())
 }
+
+// --- VoteModel ---
+
+// voteOption pairs a human-readable label with the Azure DevOps vote integer.
+type voteOption struct {
+	label string
+	value int
+}
+
+var voteOptions = []voteOption{
+	{"Approve", 10},
+	{"Approve with suggestions", 5},
+	{"Reset vote", 0},
+	{"Wait for author", -5},
+	{"Reject", -10},
+}
+
+// VoteModel lets the user cast a vote on a pull request.
+type VoteModel struct {
+	pr     *api.PullRequest
+	cursor int
+}
+
+func NewVoteModel(pr *api.PullRequest) VoteModel {
+	return VoteModel{pr: pr, cursor: 0}
+}
+
+// update returns the updated model, the selected option (nil if cancelled), and a done flag.
+func (m VoteModel) update(msg tea.Msg) (VoteModel, *voteOption, bool) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "j", "down":
+			if m.cursor < len(voteOptions)-1 {
+				m.cursor++
+			}
+		case "k", "up":
+			if m.cursor > 0 {
+				m.cursor--
+			}
+		case "enter":
+			selected := voteOptions[m.cursor]
+			return m, &selected, true
+		case "esc":
+			return m, nil, true
+		default:
+			for i := range voteOptions {
+				if msg.String() == fmt.Sprintf("%d", i+1) {
+					selected := voteOptions[i]
+					return m, &selected, true
+				}
+			}
+		}
+	}
+	return m, nil, false
+}
+
+func (m VoteModel) view() string {
+	var sb strings.Builder
+	sb.WriteString(modalTitleStyle.Render("Vote on Pull Request") + "\n\n")
+
+	for i, opt := range voteOptions {
+		num := fmt.Sprintf("%d. ", i+1)
+		label := num + colorVoteOption(opt.label, opt.value)
+		if i == m.cursor {
+			sb.WriteString(selectedItemStyle.Render(label) + "\n")
+		} else {
+			sb.WriteString(normalItemStyle.Render(label) + "\n")
+		}
+	}
+
+	sb.WriteString("\n" + helpStyle.Render("j/k: navigate  Enter/number: select  Esc: cancel"))
+	return modalStyle.Render(sb.String())
+}

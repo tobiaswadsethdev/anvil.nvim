@@ -20,6 +20,7 @@ const (
 	StateComment                 // comment modal
 	StateAssign                  // assign modal
 	StateEdit                    // field editor (external $EDITOR)
+	StateVote                    // PR vote modal
 )
 
 // Model is the root bubbletea model.
@@ -40,6 +41,7 @@ type Model struct {
 	transition TransitionModel
 	comment    CommentModel
 	assign     AssignModel
+	vote       VoteModel
 }
 
 // --- Messages ---
@@ -109,8 +111,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.detail.prModel = m.detail.prModel.setError(msg.err)
 		} else {
-			m.detail.prModel = m.detail.prModel.setData(msg.pr, msg.build, msg.fileDiffs)
+			m.detail.prModel = m.detail.prModel.setData(msg.pr, msg.build, msg.fileDiffs, msg.reviewers)
 		}
+		return m, nil
+
+	case reviewersRefreshedMsg:
+		m.detail.prModel = m.detail.prModel.setReviewers(msg.reviewers)
+		m.statusMsg = "Vote submitted"
+		m.state = StateDetail
+		return m, nil
+
+	case voteDoneMsg:
+		m.statusMsg = "Vote submitted"
+		m.state = StateDetail
 		return m, nil
 
 	case transitionsDoneMsg:
@@ -178,6 +191,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleCommentKey(msg)
 	case StateAssign:
 		return m.handleAssignKey(msg)
+	case StateVote:
+		return m.handleVoteKey(msg)
 	}
 	return m, nil
 }
@@ -250,6 +265,13 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, loadAssignableUsersCmd(m.client, m.detail.issue.Key)
 	case "e":
 		return m, startEditCmd(m.detail.issue, m.client)
+	case "v":
+		if m.detail.hasPRTab && m.detail.tabIndex == 1 && m.detail.prModel.pr != nil {
+			m.vote = NewVoteModel(m.detail.prModel.pr)
+			m.state = StateVote
+			return m, nil
+		}
+		return m, nil
 	case "?":
 		m.statusMsg = detailHelp
 		return m, nil
@@ -308,6 +330,24 @@ func (m Model) handleAssignKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m Model) handleVoteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q", "esc":
+		m.state = StateDetail
+		return m, nil
+	}
+	var selected *voteOption
+	var done bool
+	m.vote, selected, done = m.vote.update(msg)
+	if done {
+		m.state = StateDetail
+		if selected != nil {
+			return m, submitVoteCmd(m.azdoClient, m.vote.pr, selected.value)
+		}
+	}
+	return m, nil
+}
+
 func (m Model) updateSubModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m.state {
 	case StateList:
@@ -347,6 +387,8 @@ func (m Model) View() string {
 		return m.renderOverlay(m.detail.view(), m.comment.view())
 	case StateAssign:
 		return m.renderOverlay(m.detail.view(), m.assign.view())
+	case StateVote:
+		return m.renderOverlay(m.detail.view(), m.vote.view())
 	}
 	return ""
 }
@@ -357,4 +399,4 @@ func (m Model) renderOverlay(base, modal string) string {
 
 // Help strings
 const listHelp = "↑/↓: navigate  Enter: open  [/]: cycle filter  r: refresh  o: browser  q: quit"
-const detailHelp = "↑/↓: scroll  [/]: tab  t: transition  c: comment  a: assign  e: edit  o: browser  q: back"
+const detailHelp = "↑/↓: scroll  [/]: tab  t: transition  c: comment  a: assign  e: edit  v: vote (PR tab)  o: browser  q: back"

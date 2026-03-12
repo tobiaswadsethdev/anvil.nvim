@@ -131,6 +131,7 @@ func (m DetailModel) view() string {
 			keyStyle.Render("c") + " comment  " +
 			keyStyle.Render("a") + " assign  " +
 			keyStyle.Render("e") + " edit  " +
+			keyStyle.Render("v") + " vote  " +
 			keyStyle.Render("o") + " browser  " +
 			keyStyle.Render("q") + " back",
 	)
