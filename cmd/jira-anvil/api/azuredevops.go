@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -12,11 +13,12 @@ import (
 
 // AzdoClient is an Azure DevOps REST API client using PAT authentication.
 type AzdoClient struct {
-	baseURL    string
-	project    string
-	repo       string
-	authHeader string
-	http       *http.Client
+	baseURL       string
+	project       string
+	repo          string
+	authHeader    string
+	http          *http.Client
+	currentUserID string // cached after first GetCurrentUserID() call
 }
 
 // NewAzdoClient creates a new Azure DevOps API client.
@@ -93,6 +95,13 @@ type FileDiff struct {
 	Hunks      []DiffHunk // empty if Binary=true or no changes
 }
 
+// Reviewer represents an Azure DevOps PR reviewer and their vote status.
+type Reviewer struct {
+	ID          string `json:"id"`
+	DisplayName string `json:"displayName"`
+	Vote        int    `json:"vote"` // -10=Rejected, -5=WaitingForAuthor, 0=NoVote, 5=ApprovedWithSuggestions, 10=Approved
+}
+
 // --- Internal helpers ---
 
 func (c *AzdoClient) repoURL() string {
@@ -153,6 +162,35 @@ func (c *AzdoClient) getRaw(url string) ([]byte, error) {
 		return nil, fmt.Errorf("azure devops blob HTTP %s", resp.Status)
 	}
 	return body, nil
+}
+
+func (c *AzdoClient) put(url string, body []byte) ([]byte, error) {
+	req, err := http.NewRequest("PUT", url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", c.authHeader)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode >= 400 {
+		msg := string(respBody)
+		if len(msg) > 200 {
+			msg = msg[:200] + "..."
+		}
+		return nil, fmt.Errorf("azure devops %s: %s", resp.Status, msg)
+	}
+	return respBody, nil
 }
 
 // --- Public API ---
@@ -259,4 +297,57 @@ func (c *AzdoClient) GetLatestBuild(sourceRefName string) (*Build, error) {
 	}
 	b := result.Value[0]
 	return &b, nil
+}
+
+// GetReviewers returns the list of reviewers and their votes for a pull request.
+func (c *AzdoClient) GetReviewers(pr *PullRequest) ([]Reviewer, error) {
+	url := fmt.Sprintf("%s/pullRequests/%d/reviewers?api-version=7.1", c.repoURL(), pr.PullRequestID)
+	body, err := c.get(url)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Value []Reviewer `json:"value"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("parsing reviewers: %w", err)
+	}
+	return result.Value, nil
+}
+
+// GetCurrentUserID returns the authenticated user's Azure DevOps identity ID.
+// The result is cached on the client after the first call.
+func (c *AzdoClient) GetCurrentUserID() (string, error) {
+	if c.currentUserID != "" {
+		return c.currentUserID, nil
+	}
+	url := fmt.Sprintf("%s/_apis/connectionData", c.baseURL)
+	body, err := c.get(url)
+	if err != nil {
+		return "", err
+	}
+
+	var result struct {
+		AuthenticatedUser struct {
+			ID string `json:"id"`
+		} `json:"authenticatedUser"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return "", fmt.Errorf("parsing connectionData: %w", err)
+	}
+	c.currentUserID = result.AuthenticatedUser.ID
+	return c.currentUserID, nil
+}
+
+// SubmitVote casts a vote on a pull request as the given reviewer.
+// vote: -10=Rejected, -5=WaitingForAuthor, 0=NoVote, 5=ApprovedWithSuggestions, 10=Approved
+func (c *AzdoClient) SubmitVote(pr *PullRequest, vote int, reviewerID string) error {
+	url := fmt.Sprintf("%s/pullRequests/%d/reviewers/%s?api-version=7.1", c.repoURL(), pr.PullRequestID, reviewerID)
+	payload, err := json.Marshal(map[string]int{"vote": vote})
+	if err != nil {
+		return err
+	}
+	_, err = c.put(url, payload)
+	return err
 }

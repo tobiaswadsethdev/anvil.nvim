@@ -44,8 +44,15 @@ type prFetchedMsg struct {
 	pr        *api.PullRequest
 	build     *api.Build
 	fileDiffs []api.FileDiff
+	reviewers []api.Reviewer
 	err       error
 }
+
+type reviewersRefreshedMsg struct {
+	reviewers []api.Reviewer
+}
+
+type voteDoneMsg struct{}
 
 // --- Commands ---
 
@@ -196,15 +203,17 @@ func fetchPRCmd(client *api.AzdoClient, issueKey string) tea.Cmd {
 			return prFetchedMsg{} // no PR found; pr is nil
 		}
 
-		// Fetch build and changed files concurrently.
+		// Fetch build, changed files, and reviewers concurrently.
 		var (
-			build     *api.Build
-			files     []api.ChangedFile
-			buildErr  error
-			filesErr  error
+			build       *api.Build
+			files       []api.ChangedFile
+			reviewers   []api.Reviewer
+			buildErr    error
+			filesErr    error
+			reviewerErr error
 		)
 		var wg sync.WaitGroup
-		wg.Add(2)
+		wg.Add(3)
 		go func() {
 			defer wg.Done()
 			build, buildErr = client.GetLatestBuild(pr.SourceRefName)
@@ -213,12 +222,17 @@ func fetchPRCmd(client *api.AzdoClient, issueKey string) tea.Cmd {
 			defer wg.Done()
 			files, filesErr = client.GetChangedFiles(pr)
 		}()
+		go func() {
+			defer wg.Done()
+			reviewers, reviewerErr = client.GetReviewers(pr)
+		}()
 		wg.Wait()
 
-		_ = buildErr // non-fatal: show PR even if build fetch fails
+		_ = buildErr    // non-fatal: show PR even if build fetch fails
+		_ = reviewerErr // non-fatal: show PR even if reviewer fetch fails
 
 		if filesErr != nil {
-			return prFetchedMsg{pr: pr, build: build, err: filesErr}
+			return prFetchedMsg{pr: pr, build: build, reviewers: reviewers, err: filesErr}
 		}
 
 		// Fetch diffs for up to maxDiffFiles files concurrently.
@@ -246,7 +260,25 @@ func fetchPRCmd(client *api.AzdoClient, issueKey string) tea.Cmd {
 		}
 		diffWg.Wait()
 
-		return prFetchedMsg{pr: pr, build: build, fileDiffs: fileDiffs}
+		return prFetchedMsg{pr: pr, build: build, fileDiffs: fileDiffs, reviewers: reviewers}
+	}
+}
+
+// submitVoteCmd submits a vote on a pull request and refreshes the reviewer list.
+func submitVoteCmd(client *api.AzdoClient, pr *api.PullRequest, vote int) tea.Cmd {
+	return func() tea.Msg {
+		reviewerID, err := client.GetCurrentUserID()
+		if err != nil {
+			return errMsg{fmt.Errorf("fetching user identity: %w", err)}
+		}
+		if err := client.SubmitVote(pr, vote, reviewerID); err != nil {
+			return errMsg{fmt.Errorf("submitting vote: %w", err)}
+		}
+		reviewers, err := client.GetReviewers(pr)
+		if err != nil {
+			return voteDoneMsg{}
+		}
+		return reviewersRefreshedMsg{reviewers: reviewers}
 	}
 }
 
