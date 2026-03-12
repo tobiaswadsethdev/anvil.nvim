@@ -24,14 +24,15 @@ const (
 
 // Model is the root bubbletea model.
 type Model struct {
-	cfg          *config.Config
-	client       *api.Client
-	state        State
-	filterIndex  int
-	width        int
-	height       int
-	err          error
-	statusMsg    string
+	cfg         *config.Config
+	client      *api.Client
+	azdoClient  *api.AzdoClient // nil if Azure DevOps is not configured
+	state       State
+	filterIndex int
+	width       int
+	height      int
+	err         error
+	statusMsg   string
 
 	// Sub-models
 	list       ListModel
@@ -50,15 +51,16 @@ type windowSizeMsg struct{ w, h int }
 func (e errMsg) Error() string { return e.err.Error() }
 
 // NewModel creates the root model.
-func NewModel(cfg *config.Config, client *api.Client) Model {
+func NewModel(cfg *config.Config, client *api.Client, azdoClient *api.AzdoClient) Model {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 	sp.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
 
 	m := Model{
-		cfg:    cfg,
-		client: client,
-		state:  StateList,
+		cfg:        cfg,
+		client:     client,
+		azdoClient: azdoClient,
+		state:      StateList,
 	}
 	m.list = NewListModel(cfg, client, sp)
 	return m
@@ -95,8 +97,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case issueFetchedMsg:
-		m.detail = NewDetailModel(msg.issue, m.width, m.height)
+		hasPRTab := m.azdoClient != nil
+		m.detail = NewDetailModel(msg.issue, m.width, m.height, hasPRTab)
 		m.state = StateDetail
+		if hasPRTab {
+			return m, fetchPRCmd(m.azdoClient, msg.issue.Key)
+		}
+		return m, nil
+
+	case prFetchedMsg:
+		if msg.err != nil {
+			m.detail.prModel = m.detail.prModel.setError(msg.err)
+		} else {
+			m.detail.prModel = m.detail.prModel.setData(msg.pr, msg.build, msg.fileDiffs)
+		}
 		return m, nil
 
 	case transitionsDoneMsg:
@@ -211,6 +225,16 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q", "esc":
 		m.state = StateList
 		return m, nil
+	case "]":
+		if m.detail.hasPRTab {
+			m.detail.tabIndex = (m.detail.tabIndex + 1) % 2
+		}
+		return m, nil
+	case "[":
+		if m.detail.hasPRTab {
+			m.detail.tabIndex = (m.detail.tabIndex - 1 + 2) % 2
+		}
+		return m, nil
 	case "r":
 		return m.reloadDetail()
 	case "o":
@@ -299,7 +323,7 @@ func (m Model) updateSubModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) reloadDetail() (tea.Model, tea.Cmd) {
-	if m.detail.issue.Key == "" {
+	if m.detail.issue == nil || m.detail.issue.Key == "" {
 		m.state = StateList
 		return m, nil
 	}
@@ -333,4 +357,4 @@ func (m Model) renderOverlay(base, modal string) string {
 
 // Help strings
 const listHelp = "↑/↓: navigate  Enter: open  [/]: cycle filter  r: refresh  o: browser  q: quit"
-const detailHelp = "↑/↓: scroll  t: transition  c: comment  a: assign  e: edit  o: browser  q: back"
+const detailHelp = "↑/↓: scroll  [/]: tab  t: transition  c: comment  a: assign  e: edit  o: browser  q: back"
