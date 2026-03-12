@@ -42,7 +42,13 @@ func main() {
 
 	client := api.NewClient(cfg.Jira.URL, cfg.Jira.User, cfg.Jira.Token)
 
-	model := ui.NewModel(cfg, client)
+	// Azure DevOps client is optional — only created when fully configured.
+	var azdoClient *api.AzdoClient
+	if cfg.Azdo.IsConfigured() {
+		azdoClient = api.NewAzdoClient(cfg.Azdo.URL, cfg.Azdo.Project, cfg.Azdo.Repo, cfg.Azdo.Token)
+	}
+
+	model := ui.NewModel(cfg, client, azdoClient)
 
 	p := tea.NewProgram(
 		model,

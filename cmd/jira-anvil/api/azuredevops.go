@@ -1,0 +1,262 @@
+package api
+
+import (
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+	"time"
+)
+
+// AzdoClient is an Azure DevOps REST API client using PAT authentication.
+type AzdoClient struct {
+	baseURL    string
+	project    string
+	repo       string
+	authHeader string
+	http       *http.Client
+}
+
+// NewAzdoClient creates a new Azure DevOps API client.
+// Auth uses Basic auth with an empty username and the PAT token as password.
+func NewAzdoClient(url, project, repo, token string) *AzdoClient {
+	creds := base64.StdEncoding.EncodeToString([]byte(":" + token))
+	return &AzdoClient{
+		baseURL:    strings.TrimRight(url, "/"),
+		project:    project,
+		repo:       repo,
+		authHeader: "Basic " + creds,
+		http:       &http.Client{Timeout: 30 * time.Second},
+	}
+}
+
+// --- Types ---
+
+// PullRequest represents an Azure DevOps pull request.
+type PullRequest struct {
+	PullRequestID int    `json:"pullRequestId"`
+	Title         string `json:"title"`
+	Status        string `json:"status"` // "active" | "completed" | "abandoned"
+	CreatedBy     struct {
+		DisplayName string `json:"displayName"`
+	} `json:"createdBy"`
+	CreationDate         time.Time `json:"creationDate"`
+	SourceRefName        string    `json:"sourceRefName"` // "refs/heads/feature/CODE-123"
+	TargetRefName        string    `json:"targetRefName"`
+	LastMergeSourceCommit struct {
+		CommitID string `json:"commitId"`
+	} `json:"lastMergeSourceCommit"`
+	LastMergeTargetCommit struct {
+		CommitID string `json:"commitId"`
+	} `json:"lastMergeTargetCommit"`
+}
+
+// Build represents an Azure DevOps pipeline run.
+type Build struct {
+	ID          int       `json:"id"`
+	BuildNumber string    `json:"buildNumber"`
+	Status      string    `json:"status"` // "completed" | "inProgress" | "notStarted"
+	Result      string    `json:"result"` // "succeeded" | "failed" | "canceled" | "partiallySucceeded"
+	StartTime   time.Time `json:"startTime"`
+	Definition  struct {
+		Name string `json:"name"`
+	} `json:"definition"`
+}
+
+// ChangedFile is a file changed within a pull request.
+type ChangedFile struct {
+	Path             string
+	ChangeType       string // "add" | "edit" | "delete" | "rename"
+	ObjectID         string // target (source branch) blob SHA
+	OriginalObjectID string // base (target branch) blob SHA
+}
+
+// DiffLine is a single line in a unified diff.
+type DiffLine struct {
+	Content string
+	Type    string // "context" | "added" | "deleted"
+}
+
+// DiffHunk is a contiguous block of changes in a unified diff.
+type DiffHunk struct {
+	Header string
+	Lines  []DiffLine
+}
+
+// FileDiff is the complete diff for a single file.
+type FileDiff struct {
+	Path       string
+	ChangeType string
+	Binary     bool
+	Hunks      []DiffHunk // empty if Binary=true or no changes
+}
+
+// --- Internal helpers ---
+
+func (c *AzdoClient) repoURL() string {
+	return fmt.Sprintf("%s/%s/_apis/git/repositories/%s", c.baseURL, c.project, c.repo)
+}
+
+func (c *AzdoClient) buildURL() string {
+	return fmt.Sprintf("%s/%s/_apis/build", c.baseURL, c.project)
+}
+
+func (c *AzdoClient) get(url string) ([]byte, error) {
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", c.authHeader)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode >= 400 {
+		msg := string(body)
+		if len(msg) > 200 {
+			msg = msg[:200] + "..."
+		}
+		return nil, fmt.Errorf("azure devops %s: %s", resp.Status, msg)
+	}
+	return body, nil
+}
+
+func (c *AzdoClient) getRaw(url string) ([]byte, error) {
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", c.authHeader)
+	req.Header.Set("Accept", "application/octet-stream")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("azure devops blob HTTP %s", resp.Status)
+	}
+	return body, nil
+}
+
+// --- Public API ---
+
+// GetPRByIssueKey finds the most recent PR whose source branch contains the given Jira issue key.
+// Returns nil, nil if no matching PR is found.
+func (c *AzdoClient) GetPRByIssueKey(issueKey string) (*PullRequest, error) {
+	url := fmt.Sprintf("%s/pullrequests?searchCriteria.status=all&$top=50&api-version=7.1", c.repoURL())
+	body, err := c.get(url)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Value []PullRequest `json:"value"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("parsing pull requests: %w", err)
+	}
+
+	for i := range result.Value {
+		if strings.Contains(result.Value[i].SourceRefName, issueKey) {
+			pr := result.Value[i]
+			return &pr, nil
+		}
+	}
+	return nil, nil
+}
+
+// GetChangedFiles returns the list of files changed between the PR's source and target branches.
+func (c *AzdoClient) GetChangedFiles(pr *PullRequest) ([]ChangedFile, error) {
+	base := strings.TrimPrefix(pr.TargetRefName, "refs/heads/")
+	target := strings.TrimPrefix(pr.SourceRefName, "refs/heads/")
+
+	url := fmt.Sprintf(
+		"%s/diffs/commits?baseVersion=%s&targetVersion=%s&baseVersionType=Branch&targetVersionType=Branch&$top=200&api-version=7.1",
+		c.repoURL(), base, target,
+	)
+	body, err := c.get(url)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Changes []struct {
+			Item struct {
+				Path             string `json:"path"`
+				ObjectID         string `json:"objectId"`
+				OriginalObjectID string `json:"originalObjectId"`
+			} `json:"item"`
+			ChangeType string `json:"changeType"`
+		} `json:"changes"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("parsing diff: %w", err)
+	}
+
+	files := make([]ChangedFile, 0, len(result.Changes))
+	for _, ch := range result.Changes {
+		files = append(files, ChangedFile{
+			Path:             ch.Item.Path,
+			ChangeType:       ch.ChangeType,
+			ObjectID:         ch.Item.ObjectID,
+			OriginalObjectID: ch.Item.OriginalObjectID,
+		})
+	}
+	return files, nil
+}
+
+// GetBlob fetches the raw content of a git blob by its SHA.
+// Returns empty string if objectID is empty.
+func (c *AzdoClient) GetBlob(objectID string) (string, error) {
+	if objectID == "" {
+		return "", nil
+	}
+	url := fmt.Sprintf("%s/blobs/%s?api-version=7.1", c.repoURL(), objectID)
+	body, err := c.getRaw(url)
+	if err != nil {
+		return "", err
+	}
+	return string(body), nil
+}
+
+// GetLatestBuild returns the most recent pipeline run for the PR's source branch.
+func (c *AzdoClient) GetLatestBuild(sourceRefName string) (*Build, error) {
+	branch := sourceRefName
+	if !strings.HasPrefix(branch, "refs/heads/") {
+		branch = "refs/heads/" + branch
+	}
+	url := fmt.Sprintf("%s/builds?branchName=%s&$top=1&api-version=7.1", c.buildURL(), branch)
+	body, err := c.get(url)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Value []Build `json:"value"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("parsing builds: %w", err)
+	}
+	if len(result.Value) == 0 {
+		return nil, nil
+	}
+	b := result.Value[0]
+	return &b, nil
+}

@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
+	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/pmezard/go-difflib/difflib"
 	"github.com/tobiaswadsethdev/anvil.nvim/cmd/jira-anvil/api"
 	"github.com/tobiaswadsethdev/anvil.nvim/cmd/jira-anvil/ui/adf"
 )
@@ -35,6 +38,13 @@ type transitionsLoadedMsg struct {
 type assignableUsersLoadedMsg struct {
 	users    []api.User
 	issueKey string
+}
+
+type prFetchedMsg struct {
+	pr        *api.PullRequest
+	build     *api.Build
+	fileDiffs []api.FileDiff
+	err       error
 }
 
 // --- Commands ---
@@ -172,4 +182,140 @@ func MakeExecEditorCmd(msg execEditorMsg) tea.Cmd {
 func openBrowser(url string) {
 	cmd := exec.Command("xdg-open", url)
 	cmd.Start()
+}
+
+// fetchPRCmd fetches the Azure DevOps pull request for a given Jira issue key,
+// along with its diff and latest pipeline build status.
+func fetchPRCmd(client *api.AzdoClient, issueKey string) tea.Cmd {
+	return func() tea.Msg {
+		pr, err := client.GetPRByIssueKey(issueKey)
+		if err != nil {
+			return prFetchedMsg{err: err}
+		}
+		if pr == nil {
+			return prFetchedMsg{} // no PR found; pr is nil
+		}
+
+		// Fetch build and changed files concurrently.
+		var (
+			build     *api.Build
+			files     []api.ChangedFile
+			buildErr  error
+			filesErr  error
+		)
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			build, buildErr = client.GetLatestBuild(pr.SourceRefName)
+		}()
+		go func() {
+			defer wg.Done()
+			files, filesErr = client.GetChangedFiles(pr)
+		}()
+		wg.Wait()
+
+		_ = buildErr // non-fatal: show PR even if build fetch fails
+
+		if filesErr != nil {
+			return prFetchedMsg{pr: pr, build: build, err: filesErr}
+		}
+
+		// Fetch diffs for up to maxDiffFiles files concurrently.
+		const maxDiffFiles = 20
+		n := len(files)
+		if n > maxDiffFiles {
+			n = maxDiffFiles
+		}
+
+		fileDiffs := make([]api.FileDiff, len(files))
+		var diffWg sync.WaitGroup
+		for i := 0; i < n; i++ {
+			diffWg.Add(1)
+			go func(i int) {
+				defer diffWg.Done()
+				fileDiffs[i] = computeFileDiff(client, files[i])
+			}(i)
+		}
+		// Files beyond the diff limit: include path/type metadata only.
+		for i := n; i < len(files); i++ {
+			fileDiffs[i] = api.FileDiff{
+				Path:       files[i].Path,
+				ChangeType: files[i].ChangeType,
+			}
+		}
+		diffWg.Wait()
+
+		return prFetchedMsg{pr: pr, build: build, fileDiffs: fileDiffs}
+	}
+}
+
+// computeFileDiff fetches both blob versions and computes a unified diff.
+func computeFileDiff(client *api.AzdoClient, f api.ChangedFile) api.FileDiff {
+	fd := api.FileDiff{Path: f.Path, ChangeType: f.ChangeType}
+
+	var baseContent, targetContent string
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		baseContent, _ = client.GetBlob(f.OriginalObjectID)
+	}()
+	go func() {
+		defer wg.Done()
+		targetContent, _ = client.GetBlob(f.ObjectID)
+	}()
+	wg.Wait()
+
+	if isBinaryContent(baseContent) || isBinaryContent(targetContent) {
+		fd.Binary = true
+		return fd
+	}
+
+	diff := difflib.UnifiedDiff{
+		A:        difflib.SplitLines(baseContent),
+		B:        difflib.SplitLines(targetContent),
+		FromFile: "a" + f.Path,
+		ToFile:   "b" + f.Path,
+		Context:  3,
+	}
+	diffStr, err := difflib.GetUnifiedDiffString(diff)
+	if err != nil {
+		return fd
+	}
+	fd.Hunks = parseDiff(diffStr)
+	return fd
+}
+
+// isBinaryContent returns true if the string contains null bytes.
+func isBinaryContent(s string) bool {
+	return strings.ContainsRune(s, 0)
+}
+
+// parseDiff parses a unified diff string into DiffHunk/DiffLine slices.
+func parseDiff(diffStr string) []api.DiffHunk {
+	var hunks []api.DiffHunk
+	var current *api.DiffHunk
+
+	for _, line := range strings.Split(diffStr, "\n") {
+		switch {
+		case strings.HasPrefix(line, "@@"):
+			if current != nil {
+				hunks = append(hunks, *current)
+			}
+			current = &api.DiffHunk{Header: line}
+		case strings.HasPrefix(line, "---"), strings.HasPrefix(line, "+++"):
+			// skip file header lines
+		case current != nil && strings.HasPrefix(line, "+"):
+			current.Lines = append(current.Lines, api.DiffLine{Content: line[1:], Type: "added"})
+		case current != nil && strings.HasPrefix(line, "-"):
+			current.Lines = append(current.Lines, api.DiffLine{Content: line[1:], Type: "deleted"})
+		case current != nil && strings.HasPrefix(line, " "):
+			current.Lines = append(current.Lines, api.DiffLine{Content: line[1:], Type: "context"})
+		}
+	}
+	if current != nil {
+		hunks = append(hunks, *current)
+	}
+	return hunks
 }

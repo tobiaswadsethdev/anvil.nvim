@@ -12,6 +12,7 @@ A Jira Cloud TUI for Neovim — browse and administer Jira issues via named JQL 
 - **Assign** — fuzzy-search and assign users
 - **Edit** — edit description and ADF custom fields in `$EDITOR`
 - **Browser** — open any issue in browser with `o`
+- **Azure DevOps PR tab** — linked pull request with git diff and pipeline status, displayed as a tab alongside the Jira issue
 
 ## Requirements
 
@@ -19,6 +20,7 @@ A Jira Cloud TUI for Neovim — browse and administer Jira issues via named JQL 
 - [snacks.nvim](https://github.com/folke/snacks.nvim)
 - Go ≥ 1.21 (to build `jira-anvil`)
 - Jira Cloud account + API token
+- Azure DevOps Personal Access Token *(optional, for PR tab)*
 
 ## Installation
 
@@ -66,6 +68,13 @@ require('anvil').setup({
     user  = "you@example.com",
     token = vim.env.JIRA_API_TOKEN,
   },
+  -- Optional: Azure DevOps integration for PR tab in issue detail
+  azdo = {
+    url     = "https://dev.azure.com/myorg",
+    project = "myproject",
+    repo    = "myrepo",
+    token   = vim.env.AZDO_TOKEN,
+  },
   filters = {
     { name = "My Issues",   jql = "assignee = currentUser() AND status != Done ORDER BY updated DESC" },
     { name = "Sprint",      jql = "project = PROJ AND sprint in openSprints() ORDER BY priority ASC" },
@@ -78,7 +87,7 @@ require('anvil').setup({
 })
 ```
 
-Alternatively set environment variables: `JIRA_URL`, `JIRA_USER`, `JIRA_TOKEN`.
+Alternatively set environment variables: `JIRA_URL`, `JIRA_USER`, `JIRA_TOKEN`, `AZDO_URL`, `AZDO_PROJECT`, `AZDO_REPO`, `AZDO_TOKEN`.
 
 ## Usage
 
@@ -107,6 +116,8 @@ Alternatively set environment variables: `JIRA_URL`, `JIRA_USER`, `JIRA_TOKEN`.
 ### Issue Detail
 | Key    | Action                  |
 |--------|-------------------------|
+| `[`    | Previous tab (Jira / Pull Request) |
+| `]`    | Next tab (Jira / Pull Request)     |
 | `↑/k`  | Scroll up               |
 | `↓/j`  | Scroll down             |
 | `t`    | Transition status       |
@@ -115,6 +126,19 @@ Alternatively set environment variables: `JIRA_URL`, `JIRA_USER`, `JIRA_TOKEN`.
 | `e`    | Edit in `$EDITOR`       |
 | `o`    | Open in browser         |
 | `q/Esc`| Back to list            |
+
+## Azure DevOps PR Tab
+
+When Azure DevOps is configured, opening any issue detail automatically fetches the linked pull request. The PR is found by searching for a branch whose name contains the Jira issue key — so `feature/CODE-123`, `fix/CODE-123`, and `docs/CODE-123` all link to `CODE-123` regardless of which branch you have checked out locally.
+
+The **Pull Request** tab shows:
+
+- PR title, status (Active / Completed / Abandoned), author, and source → target branches
+- **Pipeline status** — latest Azure Pipelines run result (● In Progress / ✓ Succeeded / ✗ Failed / ○ Cancelled)
+- **Changed files** list with change type indicators (A added / M modified / D deleted / R renamed)
+- **Unified diff** for each file, rendered lazygit-style with colored `+`/`-` lines and `@@` hunk headers
+
+Switch between the **Jira** and **Pull Request** tabs with `[` and `]`.
 
 ## Health Check
 
@@ -129,10 +153,6 @@ Jira uses [Atlassian Document Format (ADF)](https://developer.atlassian.com/clou
 - **Renders** ADF descriptions, comments, and custom fields to readable plain text
 - **Edits** via `ADF → Markdown → $EDITOR → Markdown → ADF` round-trip
 - Supports: paragraphs, headings, lists, code blocks, blockquotes, tables, mentions, inline marks
-
-## Future: Azure DevOps
-
-Azure DevOps pull requests and pipeline support is planned as `azdo-anvil` — same snacks.nvim integration pattern. A top-level `azdo:` section will be added to the config.
 
 ## License
 

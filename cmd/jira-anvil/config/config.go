@@ -21,9 +21,23 @@ type JiraConfig struct {
 	Token string `yaml:"token"`
 }
 
+// AzdoConfig holds Azure DevOps connection settings.
+type AzdoConfig struct {
+	URL     string `yaml:"url"`
+	Project string `yaml:"project"`
+	Repo    string `yaml:"repo"`
+	Token   string `yaml:"token"`
+}
+
+// IsConfigured reports whether all required Azure DevOps fields are set.
+func (a AzdoConfig) IsConfigured() bool {
+	return a.URL != "" && a.Project != "" && a.Repo != "" && a.Token != ""
+}
+
 // Config is the root configuration structure.
 type Config struct {
 	Jira    JiraConfig `yaml:"jira"`
+	Azdo    AzdoConfig `yaml:"azdo"`
 	Filters []Filter   `yaml:"filters"`
 }
 
@@ -61,6 +75,20 @@ func Load(path string) (*Config, error) {
 	}
 	if v := os.Getenv("JIRA_TOKEN"); v != "" {
 		cfg.Jira.Token = v
+	}
+
+	// Azure DevOps environment variable overrides.
+	if v := os.Getenv("AZDO_URL"); v != "" {
+		cfg.Azdo.URL = v
+	}
+	if v := os.Getenv("AZDO_PROJECT"); v != "" {
+		cfg.Azdo.Project = v
+	}
+	if v := os.Getenv("AZDO_REPO"); v != "" {
+		cfg.Azdo.Repo = v
+	}
+	if v := os.Getenv("AZDO_TOKEN"); v != "" {
+		cfg.Azdo.Token = v
 	}
 
 	if err := validate(&cfg); err != nil {

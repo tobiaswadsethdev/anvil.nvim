@@ -6,6 +6,12 @@ local defaults = {
     user = "",
     token = "",
   },
+  azdo = {
+    url     = "",  -- e.g. "https://dev.azure.com/myorg"
+    project = "",  -- Azure DevOps project name
+    repo    = "",  -- Git repository name within the project
+    token   = "",  -- Personal Access Token (or use AZDO_TOKEN env var)
+  },
   filters = {
     {
       name = "My Issues",
@@ -51,6 +57,19 @@ function M.write_yaml()
   table.insert(lines, "  url: "   .. escape(url))
   table.insert(lines, "  user: "  .. escape(user))
   table.insert(lines, "  token: " .. escape(token))
+
+  -- Azure DevOps section (optional)
+  local azdo = cfg.azdo or {}
+  local azdo_url     = azdo.url     or vim.env.AZDO_URL     or ""
+  local azdo_project = azdo.project or vim.env.AZDO_PROJECT or ""
+  local azdo_repo    = azdo.repo    or vim.env.AZDO_REPO    or ""
+  local azdo_token   = azdo.token   or vim.env.AZDO_TOKEN   or ""
+  table.insert(lines, "azdo:")
+  table.insert(lines, "  url: "     .. escape(azdo_url))
+  table.insert(lines, "  project: " .. escape(azdo_project))
+  table.insert(lines, "  repo: "    .. escape(azdo_repo))
+  table.insert(lines, "  token: "   .. escape(azdo_token))
+
   table.insert(lines, "filters:")
 
   for _, filter in ipairs(cfg.filters or {}) do

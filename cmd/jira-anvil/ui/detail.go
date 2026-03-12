@@ -12,39 +12,63 @@ import (
 	"github.com/tobiaswadsethdev/anvil.nvim/cmd/jira-anvil/ui/adf"
 )
 
-// DetailModel shows full issue details.
+// DetailModel shows full issue details with optional PR tab.
 type DetailModel struct {
 	issue    *api.Issue
 	viewport viewport.Model
+	prModel  PRDetailModel
+	tabIndex int  // 0 = Jira, 1 = Pull Request
+	hasPRTab bool // true when Azure DevOps is configured
 	width    int
 	height   int
 }
 
-func NewDetailModel(issue *api.Issue, w, h int) DetailModel {
-	vp := viewport.New(w, h-6)
+func NewDetailModel(issue *api.Issue, w, h int, hasPRTab bool) DetailModel {
+	vpHeight := jiraViewportHeight(h, hasPRTab)
+	vp := viewport.New(w, vpHeight)
 	vp.SetContent(renderIssueContent(issue, w))
-	return DetailModel{
+	m := DetailModel{
 		issue:    issue,
 		viewport: vp,
+		hasPRTab: hasPRTab,
 		width:    w,
 		height:   h,
 	}
+	if hasPRTab {
+		m.prModel = NewPRDetailModel(w, h)
+	}
+	return m
+}
+
+func jiraViewportHeight(h int, hasPRTab bool) int {
+	if hasPRTab {
+		// title(1) + tabBar(1) + statusBar(1) + helpBar(1) + padding(3)
+		return h - 7
+	}
+	return h - 6
 }
 
 func (m DetailModel) setSize(w, h int) DetailModel {
 	m.width = w
 	m.height = h
 	m.viewport.Width = w
-	m.viewport.Height = h - 6
+	m.viewport.Height = jiraViewportHeight(h, m.hasPRTab)
 	if m.issue != nil {
 		m.viewport.SetContent(renderIssueContent(m.issue, w))
+	}
+	if m.hasPRTab {
+		m.prModel = m.prModel.setSize(w, h)
 	}
 	return m
 }
 
 func (m DetailModel) update(msg tea.Msg) (DetailModel, tea.Cmd) {
 	var cmd tea.Cmd
-	m.viewport, cmd = m.viewport.Update(msg)
+	if m.tabIndex == 1 && m.hasPRTab {
+		m.prModel, cmd = m.prModel.update(msg)
+	} else {
+		m.viewport, cmd = m.viewport.Update(msg)
+	}
 	return m, cmd
 }
 
@@ -62,8 +86,27 @@ func (m DetailModel) view() string {
 		Padding(0, 1).
 		Render(TruncateString(titleLine, m.width-4))
 
-	// Scrollbar info
-	scrollPct := int(m.viewport.ScrollPercent() * 100)
+	// Tab bar (shown when Azure DevOps is configured)
+	var tabBar string
+	if m.hasPRTab {
+		tabBar = renderTabBar(m.tabIndex, m.width)
+	}
+
+	// Content viewport
+	var content string
+	if m.tabIndex == 1 && m.hasPRTab {
+		content = m.prModel.view()
+	} else {
+		content = m.viewport.View()
+	}
+
+	// Scroll percentage for active tab
+	var scrollPct int
+	if m.tabIndex == 1 && m.hasPRTab {
+		scrollPct = int(m.prModel.viewport.ScrollPercent() * 100)
+	} else {
+		scrollPct = int(m.viewport.ScrollPercent() * 100)
+	}
 	scrollInfo := fmt.Sprintf("%d%%", scrollPct)
 
 	// Status bar
@@ -77,8 +120,13 @@ func (m DetailModel) view() string {
 	)
 
 	// Help bar
+	tabHint := ""
+	if m.hasPRTab {
+		tabHint = keyStyle.Render("[/]") + " tab  "
+	}
 	helpBar := helpStyle.Width(m.width).Render(
-		"  " + keyStyle.Render("↑/↓") + " scroll  " +
+		"  " + tabHint +
+			keyStyle.Render("↑/↓") + " scroll  " +
 			keyStyle.Render("t") + " transition  " +
 			keyStyle.Render("c") + " comment  " +
 			keyStyle.Render("a") + " assign  " +
@@ -87,7 +135,47 @@ func (m DetailModel) view() string {
 			keyStyle.Render("q") + " back",
 	)
 
-	return strings.Join([]string{titleBar, m.viewport.View(), statusBar, helpBar}, "\n")
+	parts := []string{titleBar}
+	if m.hasPRTab {
+		parts = append(parts, tabBar)
+	}
+	parts = append(parts, content, statusBar, helpBar)
+	return strings.Join(parts, "\n")
+}
+
+// renderTabBar renders the tab navigation bar.
+func renderTabBar(activeTab, width int) string {
+	tabs := []string{"Jira", "Pull Request"}
+
+	activeTabStyle := lipgloss.NewStyle().
+		Background(colorSelected).
+		Foreground(colorFg).
+		Bold(true).
+		Padding(0, 2)
+
+	inactiveTabStyle := lipgloss.NewStyle().
+		Background(lipgloss.Color("237")).
+		Foreground(colorMuted).
+		Padding(0, 2)
+
+	var parts []string
+	for i, tab := range tabs {
+		if i == activeTab {
+			parts = append(parts, activeTabStyle.Render(tab))
+		} else {
+			parts = append(parts, inactiveTabStyle.Render(tab))
+		}
+	}
+
+	bar := strings.Join(parts, "")
+	barWidth := lipgloss.Width(bar)
+	if width > barWidth {
+		filler := lipgloss.NewStyle().
+			Background(lipgloss.Color("237")).
+			Render(strings.Repeat(" ", width-barWidth))
+		bar += filler
+	}
+	return bar
 }
 
 func renderIssueContent(issue *api.Issue, width int) string {
