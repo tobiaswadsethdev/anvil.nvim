@@ -1,4 +1,4 @@
-*anvil.txt*  Jira Cloud TUI for Neovim via snacks.nvim
+*anvil.txt*  Jira Cloud TUI for Neovim
 
 Author:   Tobias
 License:  Apache 2.0
@@ -11,19 +11,20 @@ CONTENTS                                                        *anvil-contents*
   2. Requirements .............. |anvil-requirements|
   3. Installation .............. |anvil-installation|
   4. Configuration ............. |anvil-config|
-  5. Usage ..................... |anvil-usage|
-  6. Keybindings ............... |anvil-keybindings|
-  7. Azure DevOps .............. |anvil-azdo|
-  8. Commands .................. |anvil-commands|
-  9. Health check .............. |anvil-health|
+  5. Window layouts ............ |anvil-window|
+  6. Usage ..................... |anvil-usage|
+  7. Keybindings ............... |anvil-keybindings|
+  8. Azure DevOps .............. |anvil-azdo|
+  9. Commands .................. |anvil-commands|
+  10. Health check .............. |anvil-health|
 
 ==============================================================================
 INTRODUCTION                                                       *anvil-intro*
 
 anvil.nvim provides a Terminal UI (TUI) for browsing and administering Jira
 Cloud issues directly inside Neovim. It works by launching the `jira-anvil`
-Go binary in a snacks.nvim floating terminal — the same pattern used by
-lazygit.
+Go binary in a terminal window — the same pattern used by lazygit. No
+external UI plugin is required.
 
 Features:
   • Browse issues via named JQL filters (cycle with [ / ])
@@ -35,12 +36,12 @@ Features:
   • Open issues in browser
   • Azure DevOps PR tab — linked pull request with diff and pipeline status
   • PR voting — cast Approve / Reject / etc. directly from the PR tab
+  • Flexible window layouts: floating, right split, or bottom split
 
 ==============================================================================
 REQUIREMENTS                                                *anvil-requirements*
 
   • Neovim >= 0.9
-  • snacks.nvim (https://github.com/folke/snacks.nvim)
   • jira-anvil binary (see |anvil-installation|)
   • Jira Cloud account with API token
   • Azure DevOps Personal Access Token (optional, for PR tab)
@@ -54,7 +55,6 @@ With lazy.nvim (the build key compiles the binary automatically): >lua
   {
     "tobiaswadsethdev/anvil.nvim",
     build = "make install",
-    dependencies = { "folke/snacks.nvim" },
     opts = {
       jira = {
         url   = "https://yourcompany.atlassian.net",
@@ -117,8 +117,13 @@ Call `require('anvil').setup()` with an options table:
     -- Explicit path to jira-anvil binary (optional, defaults to PATH search)
     bin_path = nil,
 
-    -- Extra window options forwarded to Snacks.terminal (optional)
-    win = {},
+    -- Terminal window options (see |anvil-window|)
+    win = {
+      position = "float",   -- "float" | "right" | "bottom"
+      rounded  = false,     -- rounded border (floating only)
+      -- width  = nil,      -- explicit width in columns  (optional)
+      -- height = nil,      -- explicit height in rows    (optional)
+    },
   })
 <
 
@@ -130,6 +135,37 @@ Environment variables (take precedence over config values):
   AZDO_PROJECT     Azure DevOps project name
   AZDO_REPO        Git repository name
   AZDO_TOKEN       Azure DevOps personal access token
+
+==============================================================================
+WINDOW LAYOUTS                                                   *anvil-window*
+
+The `win` table controls how the terminal window is displayed.
+
+win.position ~
+  "float"   Centred floating window (default). Size defaults to 90 % of
+            editor columns × 85 % of editor lines.
+  "right"   Vertical split on the right side. Width defaults to 40 % of
+            editor columns.
+  "bottom"  Horizontal split at the bottom. Height defaults to 30 % of
+            editor lines.
+
+win.rounded ~
+  Only applies when `win.position = "float"`. Set to `true` to draw a
+  rounded border around the floating window.
+
+win.width / win.height ~
+  Optional integers that override the automatic size calculations.
+
+Examples: >lua
+  -- Floating window with rounded corners
+  win = { position = "float", rounded = true }
+
+  -- Right-side split, 50 columns wide
+  win = { position = "right", width = 50 }
+
+  -- Bottom split, 15 rows tall
+  win = { position = "bottom", height = 15 }
+<
 
 ==============================================================================
 USAGE                                                              *anvil-usage*
@@ -247,10 +283,10 @@ COMMANDS                                                        *anvil-commands*
 HEALTH CHECK                                                      *anvil-health*
 
 Run `:checkhealth anvil` to verify:
-  • snacks.nvim is installed
   • jira-anvil binary is on PATH
   • Config file exists
   • Jira connection settings are present
+  • win.position is a valid value
 
 ==============================================================================
 vim:tw=78:ts=8:ft=help:norl:

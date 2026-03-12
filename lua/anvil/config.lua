@@ -23,7 +23,14 @@ local defaults = {
     toggle = "<leader>jt",
   },
   bin_path = nil, -- explicit path to jira-anvil binary (optional)
-  win = {},       -- extra opts passed to Snacks.terminal
+
+  -- Terminal window options
+  win = {
+    position = "float",  -- "float" | "right" | "bottom"
+    rounded  = false,    -- rounded border (floating windows only)
+    -- width  = nil,     -- explicit width in columns  (optional)
+    -- height = nil,     -- explicit height in rows    (optional)
+  },
 }
 
 M.options = vim.deepcopy(defaults)

@@ -1,5 +1,5 @@
 --- anvil.nvim — Jira TUI for Neovim
---- Integrates the jira-anvil TUI via snacks.nvim, similar to how lazygit works.
+--- Launches the jira-anvil Go binary in a terminal window, similar to lazygit.
 ---
 --- Quick start:
 ---   require('anvil').setup({
@@ -32,12 +32,18 @@ local M = {}
 ---@field open?   string  Keymap to open the TUI
 ---@field toggle? string  Keymap to toggle the TUI
 
+---@class AnvilWinOpts
+---@field position? string   Window layout: "float" | "right" | "bottom"
+---@field rounded?  boolean  Rounded border for floating windows
+---@field width?    integer  Explicit width in columns (optional)
+---@field height?   integer  Explicit height in rows (optional)
+
 ---@class AnvilOpts
 ---@field jira?     AnvilJiraOpts
 ---@field filters?  AnvilFilterOpts[]
 ---@field keymaps?  AnvilKeymapOpts
----@field bin_path? string  Explicit path to the jira-anvil binary
----@field win?      table   Extra opts forwarded to Snacks.terminal
+---@field bin_path? string       Explicit path to the jira-anvil binary
+---@field win?      AnvilWinOpts Terminal window options
 
 --- setup configures anvil.nvim.
 ---@param opts? AnvilOpts
@@ -60,14 +66,14 @@ function M.setup(opts)
   end
 end
 
---- open opens the Jira TUI in a snacks.nvim floating terminal.
----@param opts? table  extra opts forwarded to Snacks.terminal
+--- open opens the Jira TUI.
+---@param opts? AnvilWinOpts  window opts (overrides config.win)
 function M.open(opts)
   return require("anvil.jira").open(opts)
 end
 
 --- toggle toggles the Jira TUI.
----@param opts? table  extra opts forwarded to Snacks.terminal
+---@param opts? AnvilWinOpts  window opts (overrides config.win)
 function M.toggle(opts)
   return require("anvil.jira").toggle(opts)
 end
