@@ -1,4 +1,4 @@
-*anvil.txt*  Jira TUI for Neovim via snacks.nvim
+*anvil.txt*  Jira Cloud TUI for Neovim via snacks.nvim
 
 Author:   Tobias
 License:  Apache 2.0
@@ -13,8 +13,9 @@ CONTENTS                                                        *anvil-contents*
   4. Configuration ............. |anvil-config|
   5. Usage ..................... |anvil-usage|
   6. Keybindings ............... |anvil-keybindings|
-  7. Commands .................. |anvil-commands|
-  8. Health check .............. |anvil-health|
+  7. Azure DevOps .............. |anvil-azdo|
+  8. Commands .................. |anvil-commands|
+  9. Health check .............. |anvil-health|
 
 ==============================================================================
 INTRODUCTION                                                       *anvil-intro*
@@ -32,6 +33,8 @@ Features:
   • Assign issues to team members
   • Edit description and ADF custom fields in $EDITOR
   • Open issues in browser
+  • Azure DevOps PR tab — linked pull request with diff and pipeline status
+  • PR voting — cast Approve / Reject / etc. directly from the PR tab
 
 ==============================================================================
 REQUIREMENTS                                                *anvil-requirements*
@@ -40,13 +43,14 @@ REQUIREMENTS                                                *anvil-requirements*
   • snacks.nvim (https://github.com/folke/snacks.nvim)
   • jira-anvil binary (see |anvil-installation|)
   • Jira Cloud account with API token
+  • Azure DevOps Personal Access Token (optional, for PR tab)
 
 ==============================================================================
 INSTALLATION                                                *anvil-installation*
 
 Install the plugin with your package manager, then build the binary.
 
-With lazy.nvim: >lua
+With lazy.nvim (the build key compiles the binary automatically): >lua
   {
     "tobiaswadsethdev/anvil.nvim",
     build = "make install",
@@ -82,11 +86,19 @@ Call `require('anvil').setup()` with an options table:
 
 >lua
   require('anvil').setup({
-    -- Jira Cloud connection
+    -- Jira Cloud connection (required)
     jira = {
       url   = "https://yourcompany.atlassian.net",  -- required
       user  = "you@example.com",                    -- required
       token = vim.env.JIRA_API_TOKEN,               -- required (use env var!)
+    },
+
+    -- Azure DevOps integration (optional — enables the PR tab)
+    azdo = {
+      url     = "https://dev.azure.com/myorg",
+      project = "myproject",
+      repo    = "myrepo",
+      token   = vim.env.AZDO_TOKEN,
     },
 
     -- Named JQL filters (cycle through with [ and ] in the TUI)
@@ -110,10 +122,14 @@ Call `require('anvil').setup()` with an options table:
   })
 <
 
-Environment variables (override config values):
+Environment variables (take precedence over config values):
   JIRA_URL         Jira base URL
   JIRA_USER        Jira email address
   JIRA_TOKEN       Jira API token
+  AZDO_URL         Azure DevOps organization URL
+  AZDO_PROJECT     Azure DevOps project name
+  AZDO_REPO        Git repository name
+  AZDO_TOKEN       Azure DevOps personal access token
 
 ==============================================================================
 USAGE                                                              *anvil-usage*
@@ -144,12 +160,15 @@ Issue List view:~
   q / Ctrl+C  Quit
 
 Issue Detail view:~
+  [           Previous tab (Jira / Pull Request)
+  ]           Next tab (Jira / Pull Request)
   ↑ / k       Scroll up
   ↓ / j       Scroll down
   t           Transition status
   c           Add comment
   a           Assign issue
   e           Edit description / ADF fields in $EDITOR
+  v           Vote on PR (PR tab only — see |anvil-azdo|)
   o           Open in browser
   r           Reload issue
   ?           Show help
@@ -173,6 +192,47 @@ Assign modal:~
   k / ↑       Navigate up
   Enter       Confirm assignment
   Esc         Cancel
+
+Vote modal (PR tab):~
+  j / ↓       Navigate down
+  k / ↑       Navigate up
+  1-5         Select by number
+  Enter       Confirm vote
+  Esc         Cancel
+
+==============================================================================
+AZURE DEVOPS                                                       *anvil-azdo*
+
+When the `azdo` block is present in your config (see |anvil-config|), opening
+any issue detail automatically fetches the linked pull request. The PR is
+located by searching for a branch whose name contains the Jira issue key —
+`feature/CODE-123`, `fix/CODE-123`, and `docs/CODE-123` all resolve to
+`CODE-123`, regardless of your current local branch.
+
+The Pull Request tab displays:
+  • PR title, status (Active / Completed / Abandoned), author, branches
+  • Pipeline status: ● In Progress / ✓ Succeeded / ✗ Failed / ○ Cancelled
+  • Reviewer votes:
+      ✓ green   — Approved / Approved with suggestions
+      ✗ red     — Rejected
+      ⏳ yellow — Waiting for author
+      ○ gray    — No vote
+  • Changed files with type indicators (A added / M modified / D deleted /
+    R renamed)
+  • Unified diff rendered with colored +/- lines and @@ hunk headers
+
+Switch between the Jira and Pull Request tabs with [ and ].
+
+Voting on a pull request:~
+Press `v` on the Pull Request tab to open the Vote modal. Available options:
+
+  Approve                   — ✓ Approved
+  Approve with suggestions  — ✓ Approved with suggestions
+  Reset vote                — ○ No vote
+  Wait for author           — ⏳ Waiting for author
+  Reject                    — ✗ Rejected
+
+The reviewer list refreshes automatically after a vote is cast.
 
 ==============================================================================
 COMMANDS                                                        *anvil-commands*
