@@ -5,18 +5,7 @@ function M.check()
 
   health.start("anvil.nvim")
 
-  -- 1. Check snacks.nvim is available
-  local ok_snacks = pcall(require, "snacks")
-  if ok_snacks then
-    health.ok("snacks.nvim is installed")
-  else
-    health.error(
-      "snacks.nvim is not installed",
-      { "Install snacks.nvim: https://github.com/folke/snacks.nvim" }
-    )
-  end
-
-  -- 2. Check jira-anvil binary
+  -- 1. Check jira-anvil binary
   local config = require("anvil.config")
   local bin = config.bin()
   if bin then
@@ -33,7 +22,7 @@ function M.check()
     )
   end
 
-  -- 3. Check config file
+  -- 2. Check config file
   local config_path = vim.fn.expand("~/.config/anvil/config.yaml")
   if vim.fn.filereadable(config_path) == 1 then
     health.ok("Config file found: " .. config_path)
@@ -47,7 +36,7 @@ function M.check()
     )
   end
 
-  -- 4. Validate config values
+  -- 3. Validate config values
   local opts = config.options
   if opts.jira and opts.jira.url ~= "" then
     health.ok("Jira URL configured: " .. opts.jira.url)
@@ -74,7 +63,7 @@ function M.check()
     })
   end
 
-  -- 5. Check filter count
+  -- 4. Check filter count
   local filters = opts.filters or {}
   if #filters > 0 then
     health.ok(string.format("%d JQL filter(s) configured", #filters))
@@ -82,6 +71,19 @@ function M.check()
     health.warn("No JQL filters configured", {
       "Add filters in require('anvil').setup({ filters = {...} })",
     })
+  end
+
+  -- 5. Validate window position option
+  local win = opts.win or {}
+  local valid_positions = { float = true, right = true, bottom = true }
+  local position = win.position or "float"
+  if valid_positions[position] then
+    health.ok("Window position: " .. position)
+  else
+    health.warn(
+      'Invalid win.position "' .. tostring(position) .. '"',
+      { 'Valid values: "float", "right", "bottom"' }
+    )
   end
 end
 

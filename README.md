@@ -1,6 +1,6 @@
 # anvil.nvim
 
-A Jira Cloud TUI for Neovim. Browse issues, manage transitions, review pull requests, and write comments without leaving your editor — powered by a `jira-anvil` Go binary launched in a [snacks.nvim](https://github.com/folke/snacks.nvim) floating terminal (the same pattern as lazygit).
+A Jira Cloud TUI for Neovim. Browse issues, manage transitions, review pull requests, and write comments without leaving your editor — powered by a `jira-anvil` Go binary launched in a built-in terminal window.
 
 ## Features
 
@@ -18,7 +18,6 @@ A Jira Cloud TUI for Neovim. Browse issues, manage transitions, review pull requ
 ## Requirements
 
 - Neovim ≥ 0.9
-- [snacks.nvim](https://github.com/folke/snacks.nvim)
 - Go ≥ 1.21 (to build `jira-anvil`)
 - Jira Cloud account + API token
 - Azure DevOps Personal Access Token *(optional, for PR tab)*
@@ -31,7 +30,6 @@ A Jira Cloud TUI for Neovim. Browse issues, manage transitions, review pull requ
 {
   "tobiaswadsethdev/anvil.nvim",
   build = "make install",
-  dependencies = { "folke/snacks.nvim" },
   opts = {
     jira = {
       url   = "https://yourcompany.atlassian.net",
@@ -97,10 +95,25 @@ require('anvil').setup({
   -- Explicit path to the jira-anvil binary (optional; defaults to PATH search)
   bin_path = nil,
 
-  -- Extra window options forwarded to Snacks.terminal (optional)
-  win = {},
+  -- Terminal window options
+  win = {
+    position = "float",   -- "float" | "right" | "bottom"
+    rounded  = false,     -- rounded border (floating windows only)
+    -- width  = nil,      -- explicit width in columns  (optional)
+    -- height = nil,      -- explicit height in rows    (optional)
+  },
 })
 ```
+
+### Window layouts
+
+| `position` | Description                                      |
+|------------|--------------------------------------------------|
+| `"float"`  | Centred floating window (default, 90 × 85 %)     |
+| `"right"`  | Vertical split on the right (40 % of columns)    |
+| `"bottom"` | Horizontal split at the bottom (30 % of lines)   |
+
+When `position = "float"`, setting `rounded = true` draws a rounded border around the window.
 
 **Environment variables** (take precedence over config values):
 
@@ -172,7 +185,7 @@ The **Pull Request** tab shows:
   - `⏳` yellow — Waiting for author
   - `○` gray — No vote
 - **Changed files** list with change type indicators (A / M / D / R)
-- **Unified diff** rendered lazygit-style with colored `+`/`-` lines and `@@` hunk headers
+- **Unified diff** with colored `+`/`-` lines and `@@` hunk headers
 
 Switch between **Jira** and **Pull Request** tabs with `[` and `]`.
 
@@ -200,7 +213,7 @@ Jira uses [Atlassian Document Format (ADF)](https://developer.atlassian.com/clou
 
 ## Health Check
 
-Run `:checkhealth anvil` to verify that snacks.nvim is installed, the `jira-anvil` binary is on your `PATH`, and your Jira credentials are configured.
+Run `:checkhealth anvil` to verify that the `jira-anvil` binary is on your `PATH`, your Jira credentials are configured, and the window position option is valid.
 
 ## License
 
