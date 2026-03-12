@@ -21,6 +21,7 @@ const (
 	StateAssign                  // assign modal
 	StateEdit                    // field editor (external $EDITOR)
 	StateVote                    // PR vote modal
+	StatePRComment               // PR comment/reply modal
 )
 
 // Model is the root bubbletea model.
@@ -42,6 +43,7 @@ type Model struct {
 	comment    CommentModel
 	assign     AssignModel
 	vote       VoteModel
+	prComment  PRCommentModel
 }
 
 // --- Messages ---
@@ -111,7 +113,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.detail.prModel = m.detail.prModel.setError(msg.err)
 		} else {
-			m.detail.prModel = m.detail.prModel.setData(msg.pr, msg.build, msg.fileDiffs, msg.reviewers)
+			m.detail.prModel = m.detail.prModel.setData(msg.pr, msg.build, msg.fileDiffs, msg.reviewers, msg.threads)
+		}
+		return m, nil
+
+	case prThreadsFetchedMsg:
+		if msg.err == nil {
+			m.detail.prModel = m.detail.prModel.setThreads(msg.threads)
+		}
+		return m, nil
+
+	case prCommentAddedMsg:
+		m.statusMsg = "Comment added"
+		m.state = StateDetail
+		if m.detail.prModel.pr != nil {
+			return m, fetchPRThreadsCmd(m.azdoClient, m.detail.prModel.pr)
 		}
 		return m, nil
 
@@ -193,6 +209,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleAssignKey(msg)
 	case StateVote:
 		return m.handleVoteKey(msg)
+	case StatePRComment:
+		return m.handlePRCommentKey(msg)
 	}
 	return m, nil
 }
@@ -258,6 +276,16 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "t":
 		return m, loadTransitionsCmd(m.client, m.detail.issue.Key)
 	case "c":
+		// PR tab: open PR comment modal; Jira tab: open Jira comment modal
+		if m.detail.hasPRTab && m.detail.tabIndex == 1 && m.detail.prModel.pr != nil {
+			filePaths := make([]string, 0, len(m.detail.prModel.fileDiffs))
+			for _, fd := range m.detail.prModel.fileDiffs {
+				filePaths = append(filePaths, fd.Path)
+			}
+			m.prComment = NewPRCommentModel(m.detail.prModel.threads, filePaths)
+			m.state = StatePRComment
+			return m, m.prComment.Init()
+		}
 		m.comment = NewCommentModel(m.detail.issue.Key)
 		m.state = StateComment
 		return m, m.comment.Init()
@@ -348,6 +376,39 @@ func (m Model) handleVoteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) handlePRCommentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	var result *PRCommentResult
+	var done bool
+	m.prComment, result, done = m.prComment.update(msg)
+	if done {
+		m.state = StateDetail
+		if result != nil && m.detail.prModel.pr != nil {
+			pr := m.detail.prModel.pr
+			if result.ThreadID != 0 {
+				return m, replyToPRThreadCmd(m.azdoClient, pr, result.ThreadID, result.ParentID, result.Content)
+			}
+			ctx := buildPRThreadContext(result)
+			return m, addPRThreadCmd(m.azdoClient, pr, result.Content, ctx)
+		}
+	}
+	return m, nil
+}
+
+// buildPRThreadContext constructs the Azure DevOps thread context from a comment result.
+// Returns nil for general comments (no file/code context).
+func buildPRThreadContext(r *PRCommentResult) *api.PRThreadContext {
+	if r.FilePath == "" {
+		return nil
+	}
+	ctx := &api.PRThreadContext{FilePath: r.FilePath}
+	if r.Line > 0 {
+		pos := &api.PRFilePosition{Line: r.Line, Offset: 1}
+		ctx.RightFileStart = pos
+		ctx.RightFileEnd = pos
+	}
+	return ctx
+}
+
 func (m Model) updateSubModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m.state {
 	case StateList:
@@ -389,6 +450,8 @@ func (m Model) View() string {
 		return m.renderOverlay(m.detail.view(), m.assign.view())
 	case StateVote:
 		return m.renderOverlay(m.detail.view(), m.vote.view())
+	case StatePRComment:
+		return m.renderOverlay(m.detail.view(), m.prComment.view())
 	}
 	return ""
 }
@@ -399,4 +462,4 @@ func (m Model) renderOverlay(base, modal string) string {
 
 // Help strings
 const listHelp = "↑/↓: navigate  Enter: open  [/]: cycle filter  r: refresh  o: browser  q: quit"
-const detailHelp = "↑/↓: scroll  [/]: tab  t: transition  c: comment  a: assign  e: edit  v: vote (PR tab)  o: browser  q: back"
+const detailHelp = "↑/↓: scroll  [/]: tab  t: transition  c: comment/PR comment  a: assign  e: edit  v: vote (PR tab)  o: browser  q: back"

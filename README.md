@@ -14,6 +14,7 @@ A Jira Cloud TUI for Neovim. Browse issues, manage transitions, review pull requ
 - **Browser** — open any issue in the browser with `o`
 - **Azure DevOps PR tab** — linked pull request with git diff and pipeline status, shown as a tab alongside the Jira issue
 - **PR voting** — view reviewer votes and cast your own (Approve / Reject / etc.) directly from the PR tab
+- **PR comments** — view existing PR comment threads (general, file, and code comments) and add new ones or reply to threads
 
 ## Requirements
 
@@ -162,7 +163,7 @@ When `position = "float"`, setting `rounded = true` draws a rounded border aroun
 | `↑` / `k`   | Scroll up                        |
 | `↓` / `j`   | Scroll down                      |
 | `t`         | Transition status                |
-| `c`         | Add comment                      |
+| `c`         | Add Jira comment *(Jira tab)* / Add PR comment *(PR tab)* |
 | `a`         | Assign issue                     |
 | `e`         | Edit in `$EDITOR`                |
 | `v`         | Vote on PR *(PR tab only)*       |
@@ -186,6 +187,7 @@ The **Pull Request** tab shows:
   - `○` gray — No vote
 - **Changed files** list with change type indicators (A / M / D / R)
 - **Unified diff** with colored `+`/`-` lines and `@@` hunk headers
+- **Comments** — all PR comment threads, numbered `[1]`, `[2]`, ... with author, timestamp, and replies
 
 Switch between **Jira** and **Pull Request** tabs with `[` and `]`.
 
@@ -202,6 +204,29 @@ Press `v` on the Pull Request tab to open the voting modal:
 | Reject                    | ✗ Rejected        |
 
 Navigate with `j` / `k`, select with `Enter` or a number key, cancel with `Esc`. The reviewer list refreshes automatically after voting.
+
+### PR Comments
+
+Press `c` on the Pull Request tab to open the PR comment modal. It guides you through a multi-step flow:
+
+**Step 1 — Choose comment type:**
+
+| # | Type | Description |
+|---|------|-------------|
+| 1 | General comment | A top-level PR comment with no file context |
+| 2 | File comment | A comment anchored to a specific file |
+| 3 | Code comment | A comment anchored to a file and line number |
+| 4 | Reply to thread | A reply to an existing comment thread |
+
+**Step 2 (File / Code only)** — Enter the file path. Changed files from the PR diff are shown as hints below the input.
+
+**Step 3 (Code only)** — Enter the line number.
+
+**Step 3 (Reply only)** — Select the thread to reply to from a numbered list.
+
+**Final step** — Write your comment text. Press `Ctrl+S` to submit or `Esc` to go back.
+
+After submission, the comments section refreshes automatically. Use `Esc` at any step to navigate back through the flow.
 
 ## ADF Support
 

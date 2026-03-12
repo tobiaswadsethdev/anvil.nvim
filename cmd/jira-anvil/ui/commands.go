@@ -45,6 +45,7 @@ type prFetchedMsg struct {
 	build     *api.Build
 	fileDiffs []api.FileDiff
 	reviewers []api.Reviewer
+	threads   []api.PRCommentThread
 	err       error
 }
 
@@ -53,6 +54,13 @@ type reviewersRefreshedMsg struct {
 }
 
 type voteDoneMsg struct{}
+
+type prThreadsFetchedMsg struct {
+	threads []api.PRCommentThread
+	err     error
+}
+
+type prCommentAddedMsg struct{}
 
 // --- Commands ---
 
@@ -203,17 +211,19 @@ func fetchPRCmd(client *api.AzdoClient, issueKey string) tea.Cmd {
 			return prFetchedMsg{} // no PR found; pr is nil
 		}
 
-		// Fetch build, changed files, and reviewers concurrently.
+		// Fetch build, changed files, reviewers, and threads concurrently.
 		var (
 			build       *api.Build
 			files       []api.ChangedFile
 			reviewers   []api.Reviewer
+			threads     []api.PRCommentThread
 			buildErr    error
 			filesErr    error
 			reviewerErr error
+			threadsErr  error
 		)
 		var wg sync.WaitGroup
-		wg.Add(3)
+		wg.Add(4)
 		go func() {
 			defer wg.Done()
 			build, buildErr = client.GetLatestBuild(pr.SourceRefName)
@@ -226,13 +236,18 @@ func fetchPRCmd(client *api.AzdoClient, issueKey string) tea.Cmd {
 			defer wg.Done()
 			reviewers, reviewerErr = client.GetReviewers(pr)
 		}()
+		go func() {
+			defer wg.Done()
+			threads, threadsErr = client.GetPRThreads(pr)
+		}()
 		wg.Wait()
 
 		_ = buildErr    // non-fatal: show PR even if build fetch fails
 		_ = reviewerErr // non-fatal: show PR even if reviewer fetch fails
+		_ = threadsErr  // non-fatal: show PR even if thread fetch fails
 
 		if filesErr != nil {
-			return prFetchedMsg{pr: pr, build: build, reviewers: reviewers, err: filesErr}
+			return prFetchedMsg{pr: pr, build: build, reviewers: reviewers, threads: threads, err: filesErr}
 		}
 
 		// Fetch diffs for up to maxDiffFiles files concurrently.
@@ -260,7 +275,35 @@ func fetchPRCmd(client *api.AzdoClient, issueKey string) tea.Cmd {
 		}
 		diffWg.Wait()
 
-		return prFetchedMsg{pr: pr, build: build, fileDiffs: fileDiffs, reviewers: reviewers}
+		return prFetchedMsg{pr: pr, build: build, fileDiffs: fileDiffs, reviewers: reviewers, threads: threads}
+	}
+}
+
+// fetchPRThreadsCmd fetches only the comment threads for a pull request (used to refresh after adding a comment).
+func fetchPRThreadsCmd(client *api.AzdoClient, pr *api.PullRequest) tea.Cmd {
+	return func() tea.Msg {
+		threads, err := client.GetPRThreads(pr)
+		return prThreadsFetchedMsg{threads: threads, err: err}
+	}
+}
+
+// addPRThreadCmd creates a new PR comment thread.
+func addPRThreadCmd(client *api.AzdoClient, pr *api.PullRequest, content string, ctx *api.PRThreadContext) tea.Cmd {
+	return func() tea.Msg {
+		if err := client.AddPRThread(pr, content, ctx); err != nil {
+			return errMsg{err}
+		}
+		return prCommentAddedMsg{}
+	}
+}
+
+// replyToPRThreadCmd adds a reply to an existing PR comment thread.
+func replyToPRThreadCmd(client *api.AzdoClient, pr *api.PullRequest, threadID, parentCommentID int, content string) tea.Cmd {
+	return func() tea.Msg {
+		if err := client.ReplyToPRThread(pr, threadID, parentCommentID, content); err != nil {
+			return errMsg{err}
+		}
+		return prCommentAddedMsg{}
 	}
 }
 

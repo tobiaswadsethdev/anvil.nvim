@@ -36,6 +36,8 @@ Features:
   • Open issues in browser
   • Azure DevOps PR tab — linked pull request with diff and pipeline status
   • PR voting — cast Approve / Reject / etc. directly from the PR tab
+  • PR comments — view, add, and reply to PR comment threads (general, file,
+    and code comments)
   • Flexible window layouts: floating, right split, or bottom split
 
 ==============================================================================
@@ -201,7 +203,7 @@ Issue Detail view:~
   ↑ / k       Scroll up
   ↓ / j       Scroll down
   t           Transition status
-  c           Add comment
+  c           Add Jira comment (Jira tab) / Add PR comment (PR tab)
   a           Assign issue
   e           Edit description / ADF fields in $EDITOR
   v           Vote on PR (PR tab only — see |anvil-azdo|)
@@ -217,10 +219,39 @@ Transition modal:~
   Enter       Confirm transition
   Esc         Cancel
 
-Comment modal:~
+Jira comment modal:~
   (type)      Write comment (Markdown supported)
   Ctrl+S      Submit comment
   Esc         Cancel
+
+PR comment modal (multi-step):~
+  Step 1 — comment type selection:
+    1           General comment (no file context)
+    2           File comment (anchored to a file)
+    3           Code comment (anchored to a file and line)
+    4           Reply to thread
+    j / ↓       Navigate options
+    k / ↑       Navigate options
+    Enter       Select highlighted option
+    Esc         Cancel
+  Step 2 (File/Code) — file path input:
+    (type)      Enter file path (changed files shown as hints)
+    Enter       Confirm path and proceed
+    Esc         Back to step 1
+  Step 3 (Code only) — line number input:
+    (digits)    Enter line number
+    Enter       Confirm and proceed
+    Esc         Back to step 2
+  Step 3 (Reply) — thread selection:
+    j / ↓       Navigate threads
+    k / ↑       Navigate threads
+    1-9         Select thread by number
+    Enter       Select highlighted thread
+    Esc         Back to step 1
+  Final step — comment text:
+    (type)      Write comment text
+    Ctrl+S      Submit comment
+    Esc         Back to previous step
 
 Assign modal:~
   (type)      Filter users
@@ -256,6 +287,7 @@ The Pull Request tab displays:
   • Changed files with type indicators (A added / M modified / D deleted /
     R renamed)
   • Unified diff rendered with colored +/- lines and @@ hunk headers
+  • Comments — numbered threads [1] [2] ... with author, timestamp, replies
 
 Switch between the Jira and Pull Request tabs with [ and ].
 
@@ -269,6 +301,29 @@ Press `v` on the Pull Request tab to open the Vote modal. Available options:
   Reject                    — ✗ Rejected
 
 The reviewer list refreshes automatically after a vote is cast.
+
+PR comments:~
+Press `c` on the Pull Request tab to open the PR comment modal. The modal
+walks through multiple steps:
+
+  Step 1: Choose comment type
+    1  General comment  — top-level PR comment, no file context
+    2  File comment     — comment anchored to a file path
+    3  Code comment     — comment anchored to a file path and line number
+    4  Reply to thread  — reply to an existing comment thread
+
+  Steps 2-3 (File/Code): enter the file path (changed files shown as hints)
+  and optionally the line number (Code only).
+
+  Step 3 (Reply): select the thread to reply to from a numbered list.
+
+  Final step: write your comment. Press Ctrl+S to submit.
+
+Comment threads are displayed in the PR tab viewport, numbered [1] [2] ...
+Each thread shows its type (General / File: <path> / Code: <path>:<line>),
+the author and timestamp of the root comment, the comment body, and any
+replies indented with ↳. The thread list refreshes automatically after
+submitting a comment or reply.
 
 ==============================================================================
 COMMANDS                                                        *anvil-commands*

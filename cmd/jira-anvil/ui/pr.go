@@ -16,6 +16,7 @@ type PRDetailModel struct {
 	build     *api.Build
 	fileDiffs []api.FileDiff
 	reviewers []api.Reviewer
+	threads   []api.PRCommentThread
 	viewport  viewport.Model
 	loading   bool
 	notFound  bool
@@ -41,22 +42,29 @@ func prViewportHeight(h int) int {
 	return h - 7
 }
 
-func (m PRDetailModel) setData(pr *api.PullRequest, build *api.Build, fileDiffs []api.FileDiff, reviewers []api.Reviewer) PRDetailModel {
+func (m PRDetailModel) setData(pr *api.PullRequest, build *api.Build, fileDiffs []api.FileDiff, reviewers []api.Reviewer, threads []api.PRCommentThread) PRDetailModel {
 	m.loading = false
 	m.pr = pr
 	m.build = build
 	m.fileDiffs = fileDiffs
 	m.reviewers = reviewers
+	m.threads = threads
 	if pr == nil {
 		m.notFound = true
 	}
-	m.viewport.SetContent(renderPRContent(pr, build, fileDiffs, reviewers, m.width))
+	m.viewport.SetContent(renderPRContent(pr, build, fileDiffs, reviewers, threads, m.width))
 	return m
 }
 
 func (m PRDetailModel) setReviewers(reviewers []api.Reviewer) PRDetailModel {
 	m.reviewers = reviewers
-	m.viewport.SetContent(renderPRContent(m.pr, m.build, m.fileDiffs, reviewers, m.width))
+	m.viewport.SetContent(renderPRContent(m.pr, m.build, m.fileDiffs, reviewers, m.threads, m.width))
+	return m
+}
+
+func (m PRDetailModel) setThreads(threads []api.PRCommentThread) PRDetailModel {
+	m.threads = threads
+	m.viewport.SetContent(renderPRContent(m.pr, m.build, m.fileDiffs, m.reviewers, threads, m.width))
 	return m
 }
 
@@ -73,7 +81,7 @@ func (m PRDetailModel) setSize(w, h int) PRDetailModel {
 	m.viewport.Width = w
 	m.viewport.Height = prViewportHeight(h)
 	if !m.loading && m.err == nil {
-		m.viewport.SetContent(renderPRContent(m.pr, m.build, m.fileDiffs, m.reviewers, w))
+		m.viewport.SetContent(renderPRContent(m.pr, m.build, m.fileDiffs, m.reviewers, m.threads, w))
 	}
 	return m
 }
@@ -89,7 +97,7 @@ func (m PRDetailModel) view() string {
 }
 
 // renderPRContent builds the full scrollable content for the PR tab.
-func renderPRContent(pr *api.PullRequest, build *api.Build, fileDiffs []api.FileDiff, reviewers []api.Reviewer, width int) string {
+func renderPRContent(pr *api.PullRequest, build *api.Build, fileDiffs []api.FileDiff, reviewers []api.Reviewer, threads []api.PRCommentThread, width int) string {
 	if pr == nil {
 		return lipgloss.NewStyle().
 			Foreground(colorMuted).
@@ -200,7 +208,67 @@ func renderPRContent(pr *api.PullRequest, build *api.Build, fileDiffs []api.File
 		}
 	}
 
+	// Comments
+	sb.WriteString("\n")
+	sb.WriteString(sectionStyle.Render(fmt.Sprintf("Comments (%d)", len(threads))) + "\n")
+	if len(threads) == 0 {
+		sb.WriteString("  " + lipgloss.NewStyle().Foreground(colorMuted).Render("No comments yet  •  press c to add one") + "\n")
+	} else {
+		for i, t := range threads {
+			if len(t.Comments) == 0 {
+				continue
+			}
+			root := t.Comments[0]
+
+			// Thread type label
+			typeLabel := threadTypeLabel(t)
+			header := fmt.Sprintf("[%d] %s  •  %s  •  %s",
+				i+1,
+				lipgloss.NewStyle().Foreground(colorSecond).Bold(true).Render(typeLabel),
+				lipgloss.NewStyle().Foreground(colorFg).Render(root.Author.DisplayName),
+				lipgloss.NewStyle().Foreground(colorMuted).Render(formatTime(root.PublishedDate)),
+			)
+			sb.WriteString("  " + header + "\n")
+
+			// Root comment body (first 120 chars, single line)
+			body := strings.ReplaceAll(root.Content, "\n", " ")
+			if len(body) > 120 {
+				body = body[:117] + "..."
+			}
+			sb.WriteString("  " + lipgloss.NewStyle().Foreground(colorFg).Render("    "+body) + "\n")
+
+			// Replies
+			for _, reply := range t.Comments[1:] {
+				if reply.IsDeleted || reply.CommentType == "system" {
+					continue
+				}
+				replyBody := strings.ReplaceAll(reply.Content, "\n", " ")
+				if len(replyBody) > 100 {
+					replyBody = replyBody[:97] + "..."
+				}
+				replyLine := fmt.Sprintf("    ↳ %s  •  %s  •  %s",
+					lipgloss.NewStyle().Foreground(colorFg).Render(reply.Author.DisplayName),
+					lipgloss.NewStyle().Foreground(colorMuted).Render(formatTime(reply.PublishedDate)),
+					lipgloss.NewStyle().Foreground(colorMuted).Render(replyBody),
+				)
+				sb.WriteString("  " + replyLine + "\n")
+			}
+			sb.WriteString("\n")
+		}
+	}
+
 	return sb.String()
+}
+
+// threadTypeLabel returns a short human-readable label for a PR comment thread.
+func threadTypeLabel(t api.PRCommentThread) string {
+	if t.ThreadContext == nil || t.ThreadContext.FilePath == "" {
+		return "General"
+	}
+	if t.ThreadContext.RightFileStart != nil {
+		return fmt.Sprintf("Code: %s:%d", t.ThreadContext.FilePath, t.ThreadContext.RightFileStart.Line)
+	}
+	return "File: " + t.ThreadContext.FilePath
 }
 
 func colorPRStatus(status string) string {

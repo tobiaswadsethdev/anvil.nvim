@@ -102,6 +102,41 @@ type Reviewer struct {
 	Vote        int    `json:"vote"` // -10=Rejected, -5=WaitingForAuthor, 0=NoVote, 5=ApprovedWithSuggestions, 10=Approved
 }
 
+// PRCommentThread is a conversation thread on a pull request.
+type PRCommentThread struct {
+	ID            int              `json:"id"`
+	Status        string           `json:"status"`
+	IsDeleted     bool             `json:"isDeleted"`
+	Comments      []PRComment      `json:"comments"`
+	ThreadContext *PRThreadContext `json:"threadContext"`
+}
+
+// PRComment is a single comment within a PRCommentThread.
+type PRComment struct {
+	ID              int    `json:"id"`
+	Content         string `json:"content"`
+	CommentType     string `json:"commentType"` // "text" | "system"
+	ParentCommentID int    `json:"parentCommentId"`
+	IsDeleted       bool   `json:"isDeleted"`
+	Author          struct {
+		DisplayName string `json:"displayName"`
+	} `json:"author"`
+	PublishedDate time.Time `json:"publishedDate"`
+}
+
+// PRThreadContext identifies the file and optional line range for a file/code comment.
+type PRThreadContext struct {
+	FilePath       string          `json:"filePath,omitempty"`
+	RightFileStart *PRFilePosition `json:"rightFileStart,omitempty"`
+	RightFileEnd   *PRFilePosition `json:"rightFileEnd,omitempty"`
+}
+
+// PRFilePosition is a line/offset within a file for a code comment.
+type PRFilePosition struct {
+	Line   int `json:"line"`
+	Offset int `json:"offset"`
+}
+
 // --- Internal helpers ---
 
 func (c *AzdoClient) repoURL() string {
@@ -162,6 +197,35 @@ func (c *AzdoClient) getRaw(url string) ([]byte, error) {
 		return nil, fmt.Errorf("azure devops blob HTTP %s", resp.Status)
 	}
 	return body, nil
+}
+
+func (c *AzdoClient) post(url string, body []byte) ([]byte, error) {
+	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", c.authHeader)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode >= 400 {
+		msg := string(respBody)
+		if len(msg) > 200 {
+			msg = msg[:200] + "..."
+		}
+		return nil, fmt.Errorf("azure devops %s: %s", resp.Status, msg)
+	}
+	return respBody, nil
 }
 
 func (c *AzdoClient) put(url string, body []byte) ([]byte, error) {
@@ -349,5 +413,85 @@ func (c *AzdoClient) SubmitVote(pr *PullRequest, vote int, reviewerID string) er
 		return err
 	}
 	_, err = c.put(url, payload)
+	return err
+}
+
+// GetPRThreads returns all non-system, non-deleted comment threads for a pull request.
+func (c *AzdoClient) GetPRThreads(pr *PullRequest) ([]PRCommentThread, error) {
+	url := fmt.Sprintf("%s/pullRequests/%d/threads?api-version=7.1", c.repoURL(), pr.PullRequestID)
+	body, err := c.get(url)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Value []PRCommentThread `json:"value"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("parsing PR threads: %w", err)
+	}
+
+	// Filter out deleted threads and system-generated threads.
+	threads := result.Value[:0]
+	for _, t := range result.Value {
+		if t.IsDeleted {
+			continue
+		}
+		if len(t.Comments) > 0 && t.Comments[0].CommentType == "system" {
+			continue
+		}
+		threads = append(threads, t)
+	}
+	return threads, nil
+}
+
+// AddPRThread creates a new comment thread on a pull request.
+// ctx is nil for a general (PR-level) comment, or contains file/line info for file/code comments.
+func (c *AzdoClient) AddPRThread(pr *PullRequest, content string, ctx *PRThreadContext) error {
+	type comment struct {
+		Content         string `json:"content"`
+		CommentType     string `json:"commentType"`
+		ParentCommentID int    `json:"parentCommentId"`
+	}
+	type thread struct {
+		Comments      []comment        `json:"comments"`
+		Status        string           `json:"status"`
+		ThreadContext *PRThreadContext `json:"threadContext,omitempty"`
+	}
+
+	payload, err := json.Marshal(thread{
+		Comments:      []comment{{Content: content, CommentType: "text", ParentCommentID: 0}},
+		Status:        "active",
+		ThreadContext: ctx,
+	})
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/pullRequests/%d/threads?api-version=7.1", c.repoURL(), pr.PullRequestID)
+	_, err = c.post(url, payload)
+	return err
+}
+
+// ReplyToPRThread adds a reply comment to an existing thread.
+// parentCommentID should be the ID of the root comment in the thread.
+func (c *AzdoClient) ReplyToPRThread(pr *PullRequest, threadID, parentCommentID int, content string) error {
+	type comment struct {
+		Content         string `json:"content"`
+		CommentType     string `json:"commentType"`
+		ParentCommentID int    `json:"parentCommentId"`
+	}
+
+	payload, err := json.Marshal(comment{
+		Content:         content,
+		CommentType:     "text",
+		ParentCommentID: parentCommentID,
+	})
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf("%s/pullRequests/%d/threads/%d/comments?api-version=7.1", c.repoURL(), pr.PullRequestID, threadID)
+	_, err = c.post(url, payload)
 	return err
 }
