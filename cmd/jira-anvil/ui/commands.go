@@ -578,6 +578,27 @@ func generateIssueTemplate(ctx createIssueCtx) string {
 	return sb.String()
 }
 
+// isADFField reports whether a field should be serialised as ADF (Atlassian
+// Document Format) when submitted to the Jira Cloud REST API v3.
+// The description field may be returned with Schema.Type == "string" by the
+// create-meta endpoint even though it requires ADF.  Some custom richtext /
+// textarea fields also carry non-"doc" schema types but still need ADF.
+func isADFField(f api.CreateField) bool {
+	if f.Schema.Type == "doc" {
+		return true
+	}
+	if f.FieldID == "description" {
+		return true
+	}
+	// Known Atlassian custom field types that accept ADF.
+	switch f.Schema.Custom {
+	case "com.atlassian.jira.plugin.system.customfieldtypes:richtext",
+		"com.atlassian.jira.plugin.system.customfieldtypes:textarea":
+		return true
+	}
+	return false
+}
+
 // writeFieldTemplate writes the template entry for a single field.
 func writeFieldTemplate(sb *strings.Builder, f api.CreateField, required bool) {
 	// Comment line with field name and info
@@ -609,7 +630,7 @@ func writeFieldTemplate(sb *strings.Builder, f api.CreateField, required bool) {
 	}
 
 	// Field key and default value
-	if f.Schema.Type == "doc" || (f.Schema.Type == "string" && f.FieldID == "description") {
+	if isADFField(f) {
 		sb.WriteString(fmt.Sprintf("%s: |\n  \n\n", f.FieldID))
 	} else {
 		sb.WriteString(fmt.Sprintf("%s: \"\"\n\n", f.FieldID))
@@ -706,6 +727,10 @@ func parseIssueTemplate(content string, ctx createIssueCtx, client *api.Client) 
 
 // convertFieldValue converts a string value from the template to the Jira API format.
 func convertFieldValue(value string, f api.CreateField, client *api.Client) (interface{}, error) {
+	if isADFField(f) {
+		return json.RawMessage(adf.FromMarkdown(value)), nil
+	}
+
 	switch f.Schema.Type {
 	case "string":
 		return value, nil
@@ -732,9 +757,6 @@ func convertFieldValue(value string, f api.CreateField, client *api.Client) (int
 			return nil, nil // skip silently
 		}
 		return map[string]string{"accountId": users[0].AccountID}, nil
-
-	case "doc":
-		return json.RawMessage(adf.FromMarkdown(value)), nil
 
 	case "array":
 		return convertArrayFieldValue(value, f, client)
