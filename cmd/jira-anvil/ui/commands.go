@@ -199,6 +199,25 @@ func openBrowser(url string) {
 	cmd.Start()
 }
 
+// copyToClipboard writes text to the system clipboard.
+// Tries wl-copy (Wayland), xclip (X11), and pbcopy (macOS) in order.
+// Returns true if a clipboard tool was found and succeeded.
+func copyToClipboard(text string) bool {
+	candidates := [][]string{
+		{"wl-copy"},
+		{"xclip", "-selection", "clipboard"},
+		{"pbcopy"},
+	}
+	for _, args := range candidates {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Stdin = strings.NewReader(text)
+		if err := cmd.Run(); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
 // fetchPRCmd fetches the Azure DevOps pull request for a given Jira issue key,
 // along with its diff and latest pipeline build status.
 func fetchPRCmd(client *api.AzdoClient, issueKey string) tea.Cmd {
