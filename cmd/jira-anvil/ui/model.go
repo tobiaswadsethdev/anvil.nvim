@@ -300,6 +300,16 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, nil
+	case "y":
+		if m.detail.hasPRTab && m.detail.tabIndex == 1 && m.detail.prModel.pr != nil {
+			url := m.azdoClient.PRWebURL(m.detail.prModel.pr.PullRequestID)
+			if copyToClipboard(url) {
+				m.statusMsg = "PR link copied to clipboard"
+			} else {
+				m.statusMsg = "Failed to copy: install xclip, wl-copy, or pbcopy"
+			}
+		}
+		return m, nil
 	case "?":
 		m.statusMsg = detailHelp
 		return m, nil
@@ -462,4 +472,4 @@ func (m Model) renderOverlay(base, modal string) string {
 
 // Help strings
 const listHelp = "↑/↓: navigate  Enter: open  [/]: cycle filter  r: refresh  o: browser  q: quit"
-const detailHelp = "↑/↓: scroll  [/]: tab  t: transition  c: comment/PR comment  a: assign  e: edit  v: vote (PR tab)  o: browser  q: back"
+const detailHelp = "↑/↓: scroll  [/]: tab  t: transition  c: comment/PR comment  a: assign  e: edit  v: vote (PR tab)  y: copy PR link (PR tab)  o: browser  q: back"

@@ -137,6 +137,11 @@ type PRFilePosition struct {
 	Offset int `json:"offset"`
 }
 
+// PRWebURL returns the browser-accessible URL for a pull request.
+func (c *AzdoClient) PRWebURL(prID int) string {
+	return fmt.Sprintf("%s/%s/_git/%s/pullrequest/%d", c.baseURL, c.project, c.repo, prID)
+}
+
 // --- Internal helpers ---
 
 func (c *AzdoClient) repoURL() string {
