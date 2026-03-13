@@ -127,6 +127,9 @@ func ColorPriority(priority string) string {
 
 // TruncateString truncates a string to maxLen, adding ellipsis if needed.
 func TruncateString(s string, maxLen int) string {
+	if maxLen <= 0 {
+		return ""
+	}
 	if len(s) <= maxLen {
 		return s
 	}
