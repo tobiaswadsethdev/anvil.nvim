@@ -142,11 +142,13 @@ func (c *Client) do(method, path string, body interface{}) ([]byte, error) {
 
 // SearchIssues returns issues matching the given JQL query.
 func (c *Client) SearchIssues(jql string, maxResults int) ([]Issue, int, error) {
-	fields := "summary,status,priority,assignee,updated,labels"
-	path := fmt.Sprintf("/rest/api/3/search?jql=%s&fields=%s&maxResults=%d",
-		url.QueryEscape(jql), url.QueryEscape(fields), maxResults)
+	body := map[string]interface{}{
+		"jql":        jql,
+		"fields":     []string{"summary", "status", "priority", "assignee", "updated", "labels"},
+		"maxResults": maxResults,
+	}
 
-	data, err := c.do("GET", path, nil)
+	data, err := c.do("POST", "/rest/api/3/search/jql", body)
 	if err != nil {
 		return nil, 0, err
 	}
