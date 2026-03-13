@@ -255,7 +255,7 @@ func renderIssueContent(issue *api.Issue, width int) string {
 			}
 			meta := fmt.Sprintf("%s  ·  %s",
 				commentMetaStyle.Render(author),
-				commentMetaStyle.Render(formatTime(comment.Created)),
+				commentMetaStyle.Render(formatTime(comment.Created.Time)),
 			)
 			sb.WriteString("  " + meta + "\n")
 

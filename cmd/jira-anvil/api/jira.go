@@ -32,6 +32,32 @@ func NewClient(jiraURL, user, token string) *Client {
 
 // --- Types ---
 
+// JiraTime wraps time.Time to handle Jira's non-standard ISO 8601 timestamps
+// (e.g. "2026-03-11T13:04:56.037+0100") which omit the colon in the UTC offset.
+type JiraTime struct{ time.Time }
+
+func (jt *JiraTime) UnmarshalJSON(b []byte) error {
+	s := strings.Trim(string(b), `"`)
+	if s == "null" || s == "" {
+		return nil
+	}
+	// Try standard RFC3339 first, then RFC3339 with milliseconds, then the
+	// Jira-specific format that lacks a colon in the UTC offset.
+	for _, layout := range []string{
+		time.RFC3339Nano,
+		time.RFC3339,
+		"2006-01-02T15:04:05.999999999-0700",
+		"2006-01-02T15:04:05-0700",
+	} {
+		t, err := time.Parse(layout, s)
+		if err == nil {
+			jt.Time = t
+			return nil
+		}
+	}
+	return fmt.Errorf("cannot parse Jira time %q", s)
+}
+
 type Issue struct {
 	ID     string      `json:"id"`
 	Key    string      `json:"key"`
@@ -50,8 +76,8 @@ type IssueFields struct {
 	} `json:"priority"`
 	Assignee  *User           `json:"assignee"`
 	Reporter  *User           `json:"reporter"`
-	Created   time.Time       `json:"created"`
-	Updated   time.Time       `json:"updated"`
+	Created   JiraTime        `json:"created"`
+	Updated   JiraTime        `json:"updated"`
 	Comment   *CommentPage    `json:"comment"`
 	Labels    []string        `json:"labels"`
 	Custom    map[string]json.RawMessage `json:"-"` // populated by UnmarshalCustomFields
@@ -72,8 +98,8 @@ type Comment struct {
 	ID      string          `json:"id"`
 	Author  *User           `json:"author"`
 	Body    json.RawMessage `json:"body"` // ADF JSON
-	Created time.Time       `json:"created"`
-	Updated time.Time       `json:"updated"`
+	Created JiraTime        `json:"created"`
+	Updated JiraTime        `json:"updated"`
 }
 
 type Transition struct {

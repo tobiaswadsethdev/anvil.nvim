@@ -101,7 +101,7 @@ func (m *ListModel) buildTable() {
 			issue.Fields.Status.Name,
 			issue.Fields.Priority.Name,
 			assignee,
-			formatAge(issue.Fields.Updated),
+			formatAge(issue.Fields.Updated.Time),
 		})
 	}
 
