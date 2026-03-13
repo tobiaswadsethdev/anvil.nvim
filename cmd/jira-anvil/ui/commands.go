@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -61,6 +62,30 @@ type prThreadsFetchedMsg struct {
 }
 
 type prCommentAddedMsg struct{}
+
+type projectsLoadedMsg struct {
+	projects []api.Project
+}
+
+type issueTypesForCreateLoadedMsg struct {
+	issueTypes  []api.CreateIssueType
+	projectKey  string
+	projectName string
+}
+
+type createMetaLoadedMsg struct {
+	ctx createIssueCtx
+}
+
+type issueCreatedMsg struct {
+	key string
+}
+
+type execCreateEditorMsg struct {
+	path   string
+	ctx    createIssueCtx
+	client *api.Client
+}
 
 // --- Commands ---
 
@@ -384,6 +409,504 @@ func computeFileDiff(client *api.AzdoClient, f api.ChangedFile) api.FileDiff {
 // isBinaryContent returns true if the string contains null bytes.
 func isBinaryContent(s string) bool {
 	return strings.ContainsRune(s, 0)
+}
+
+// loadProjectsCmd fetches all Jira projects the user has access to.
+func loadProjectsCmd(client *api.Client) tea.Cmd {
+	return func() tea.Msg {
+		projects, err := client.GetProjects()
+		if err != nil {
+			return errMsg{err}
+		}
+		return projectsLoadedMsg{projects}
+	}
+}
+
+// loadIssueTypesForCreateCmd fetches issue types available for creating issues in a project.
+func loadIssueTypesForCreateCmd(client *api.Client, projectKey, projectName string) tea.Cmd {
+	return func() tea.Msg {
+		types, err := client.GetCreateMetaIssueTypes(projectKey)
+		if err != nil {
+			return errMsg{err}
+		}
+		return issueTypesForCreateLoadedMsg{types, projectKey, projectName}
+	}
+}
+
+// loadCreateMetaCmd fetches all available fields for creating an issue of the given type.
+func loadCreateMetaCmd(client *api.Client, ctx createIssueCtx) tea.Cmd {
+	return func() tea.Msg {
+		fields, err := client.GetCreateMetaFields(ctx.projectKey, ctx.issueTypeID)
+		if err != nil {
+			return errMsg{err}
+		}
+		ctx.fields = fields
+		return createMetaLoadedMsg{ctx}
+	}
+}
+
+// generateAndOpenCreateEditorCmd generates a YAML issue template and signals the editor to open.
+func generateAndOpenCreateEditorCmd(client *api.Client, ctx createIssueCtx) tea.Cmd {
+	return func() tea.Msg {
+		template := generateIssueTemplate(ctx)
+		tmpFile, err := os.CreateTemp("", "anvil-create-*.yaml")
+		if err != nil {
+			return errMsg{fmt.Errorf("creating temp file: %w", err)}
+		}
+		tmpPath := tmpFile.Name()
+		if _, err := tmpFile.WriteString(template); err != nil {
+			tmpFile.Close()
+			return errMsg{fmt.Errorf("writing temp file: %w", err)}
+		}
+		tmpFile.Close()
+		return execCreateEditorMsg{path: tmpPath, ctx: ctx, client: client}
+	}
+}
+
+// MakeExecCreateEditorCmd opens the editor for issue creation and submits after save.
+func MakeExecCreateEditorCmd(msg execCreateEditorMsg) tea.Cmd {
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = "nvim"
+	}
+	cmd := exec.Command(editor, msg.path)
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		defer os.Remove(msg.path)
+		if err != nil {
+			return errMsg{fmt.Errorf("editor: %w", err)}
+		}
+
+		data, readErr := os.ReadFile(msg.path)
+		if readErr != nil {
+			return errMsg{fmt.Errorf("reading file: %w", readErr)}
+		}
+
+		fields, parseErr := parseIssueTemplate(string(data), msg.ctx, msg.client)
+		if parseErr != nil {
+			return errMsg{parseErr}
+		}
+
+		fields["project"] = map[string]string{"key": msg.ctx.projectKey}
+		fields["issuetype"] = map[string]string{"id": msg.ctx.issueTypeID}
+
+		key, createErr := msg.client.CreateIssue(fields)
+		if createErr != nil {
+			return errMsg{fmt.Errorf("creating issue: %w", createErr)}
+		}
+		return issueCreatedMsg{key}
+	})
+}
+
+// systemFieldsToSkip are fields that are auto-set by Jira or already handled elsewhere.
+var systemFieldsToSkip = map[string]bool{
+	"project":         true,
+	"issuetype":       true,
+	"status":          true,
+	"created":         true,
+	"updated":         true,
+	"creator":         true,
+	"reporter":        true,
+	"lastViewed":      true,
+	"watches":         true,
+	"votes":           true,
+	"worklog":         true,
+	"timetracking":    true,
+	"attachment":      true,
+	"subtasks":        true,
+	"issuelinks":      true,
+	"comment":         true,
+	"thumbnail":       true,
+	"aggregateprogress": true,
+	"progress":        true,
+	"timespent":       true,
+	"aggregatetimespent": true,
+	"timeestimate":    true,
+	"aggregatetimeestimate": true,
+	"aggregatetimeoriginalestimate": true,
+	"timeoriginalestimate": true,
+	"workratio":       true,
+	"resolutiondate":  true,
+	"resolution":      true,
+}
+
+// generateIssueTemplate produces an annotated YAML template for all fields available
+// when creating an issue of the type described by ctx.
+func generateIssueTemplate(ctx createIssueCtx) string {
+	var sb strings.Builder
+
+	sb.WriteString(fmt.Sprintf("# Create Jira Issue: %s (%s) - %s\n", ctx.projectName, ctx.projectKey, ctx.issueTypeName))
+	sb.WriteString("# Fill in the values below. Lines starting with # are comments and are ignored.\n")
+	sb.WriteString("# Required fields are marked [REQUIRED]. Save and close to submit.\n")
+	sb.WriteString("# Leave optional fields as empty string \"\" to skip them.\n\n")
+
+	// Separate required from optional fields, and standard from custom
+	var required, standard, custom []api.CreateField
+	for _, f := range ctx.fields {
+		if systemFieldsToSkip[f.FieldID] {
+			continue
+		}
+		if f.Required {
+			required = append(required, f)
+		} else if strings.HasPrefix(f.FieldID, "customfield_") {
+			custom = append(custom, f)
+		} else {
+			standard = append(standard, f)
+		}
+	}
+
+	// Write required fields first
+	for _, f := range required {
+		writeFieldTemplate(&sb, f, true)
+	}
+
+	// Write optional standard fields
+	if len(standard) > 0 {
+		sb.WriteString("\n# ── Optional Fields ──────────────────────────────────\n\n")
+		for _, f := range standard {
+			writeFieldTemplate(&sb, f, false)
+		}
+	}
+
+	// Write custom fields
+	if len(custom) > 0 {
+		sb.WriteString("\n# ── Custom Fields ────────────────────────────────────\n\n")
+		for _, f := range custom {
+			writeFieldTemplate(&sb, f, false)
+		}
+	}
+
+	return sb.String()
+}
+
+// writeFieldTemplate writes the template entry for a single field.
+func writeFieldTemplate(sb *strings.Builder, f api.CreateField, required bool) {
+	// Comment line with field name and info
+	label := f.Name
+	if required {
+		label = "[REQUIRED] " + label
+	}
+
+	schemaHint := fieldSchemaHint(f)
+	if schemaHint != "" {
+		sb.WriteString(fmt.Sprintf("# %s (%s)\n", label, schemaHint))
+	} else {
+		sb.WriteString(fmt.Sprintf("# %s\n", label))
+	}
+
+	// List allowed values as a comment if available
+	if len(f.AllowedValues) > 0 && len(f.AllowedValues) <= 20 {
+		opts := make([]string, 0, len(f.AllowedValues))
+		for _, av := range f.AllowedValues {
+			if av.Name != "" {
+				opts = append(opts, av.Name)
+			} else if av.Value != "" {
+				opts = append(opts, av.Value)
+			}
+		}
+		if len(opts) > 0 {
+			sb.WriteString(fmt.Sprintf("# Options: %s\n", strings.Join(opts, " | ")))
+		}
+	}
+
+	// Field key and default value
+	if f.Schema.Type == "doc" || (f.Schema.Type == "string" && f.FieldID == "description") {
+		sb.WriteString(fmt.Sprintf("%s: |\n  \n\n", f.FieldID))
+	} else {
+		sb.WriteString(fmt.Sprintf("%s: \"\"\n\n", f.FieldID))
+	}
+}
+
+// fieldSchemaHint returns a human-readable type hint for a field schema.
+func fieldSchemaHint(f api.CreateField) string {
+	t := f.Schema.Type
+	switch t {
+	case "string":
+		return "text"
+	case "number":
+		return "number"
+	case "date":
+		return "date: YYYY-MM-DD"
+	case "datetime":
+		return "datetime: YYYY-MM-DDTHH:MM:SS.000+0000"
+	case "user":
+		return "email address"
+	case "priority":
+		return "priority name"
+	case "option":
+		return "option value"
+	case "array":
+		switch f.Schema.Items {
+		case "string":
+			return "space-separated values"
+		case "option":
+			return "comma-separated options"
+		case "version":
+			return "comma-separated versions"
+		case "component":
+			return "comma-separated components"
+		case "user":
+			return "comma-separated email addresses"
+		}
+		return "array"
+	case "doc":
+		return "Markdown text"
+	}
+	return t
+}
+
+// parseIssueTemplate parses the YAML-like template content and converts values to Jira API format.
+// Returns a map of field IDs to their API-formatted values.
+func parseIssueTemplate(content string, ctx createIssueCtx, client *api.Client) (map[string]interface{}, error) {
+	// Build a lookup map from fieldID to CreateField for type information
+	fieldMeta := make(map[string]api.CreateField, len(ctx.fields))
+	for _, f := range ctx.fields {
+		fieldMeta[f.FieldID] = f
+	}
+
+	// Parse the YAML manually to preserve multi-line strings and skip comments.
+	// We use a simple line-by-line parser for the key: value / key: | formats.
+	parsed, err := parseSimpleYAML(content)
+	if err != nil {
+		return nil, fmt.Errorf("parsing template: %w", err)
+	}
+
+	result := make(map[string]interface{})
+
+	for fieldID, rawValue := range parsed {
+		value := strings.TrimSpace(rawValue)
+		if value == "" {
+			// Check if required
+			if meta, ok := fieldMeta[fieldID]; ok && meta.Required {
+				if fieldID != "project" && fieldID != "issuetype" {
+					return nil, fmt.Errorf("required field %q (%s) is empty", fieldID, meta.Name)
+				}
+			}
+			continue
+		}
+
+		meta, hasMeta := fieldMeta[fieldID]
+		if !hasMeta {
+			// Unknown field — include as plain string and hope for the best
+			result[fieldID] = value
+			continue
+		}
+
+		converted, err := convertFieldValue(value, meta, client)
+		if err != nil {
+			// Non-fatal: skip the field and continue
+			continue
+		}
+		if converted != nil {
+			result[fieldID] = converted
+		}
+	}
+
+	return result, nil
+}
+
+// convertFieldValue converts a string value from the template to the Jira API format.
+func convertFieldValue(value string, f api.CreateField, client *api.Client) (interface{}, error) {
+	switch f.Schema.Type {
+	case "string":
+		return value, nil
+
+	case "number":
+		n, err := strconv.ParseFloat(value, 64)
+		if err != nil {
+			return nil, fmt.Errorf("field %s: invalid number %q", f.FieldID, value)
+		}
+		return n, nil
+
+	case "date", "datetime":
+		return value, nil
+
+	case "priority":
+		return map[string]string{"name": value}, nil
+
+	case "option":
+		return map[string]string{"value": value}, nil
+
+	case "user":
+		users, err := client.SearchUsers(value)
+		if err != nil || len(users) == 0 {
+			return nil, nil // skip silently
+		}
+		return map[string]string{"accountId": users[0].AccountID}, nil
+
+	case "doc":
+		return json.RawMessage(adf.FromMarkdown(value)), nil
+
+	case "array":
+		return convertArrayFieldValue(value, f, client)
+
+	default:
+		return value, nil
+	}
+}
+
+// convertArrayFieldValue handles array-type fields.
+func convertArrayFieldValue(value string, f api.CreateField, client *api.Client) (interface{}, error) {
+	switch f.Schema.Items {
+	case "string":
+		// Space-separated (e.g. labels)
+		parts := strings.Fields(value)
+		if len(parts) == 0 {
+			return nil, nil
+		}
+		return parts, nil
+
+	case "option":
+		parts := splitCSV(value)
+		result := make([]map[string]string, 0, len(parts))
+		for _, p := range parts {
+			if p != "" {
+				result = append(result, map[string]string{"value": p})
+			}
+		}
+		if len(result) == 0 {
+			return nil, nil
+		}
+		return result, nil
+
+	case "version":
+		parts := splitCSV(value)
+		result := make([]map[string]string, 0, len(parts))
+		for _, p := range parts {
+			if p != "" {
+				result = append(result, map[string]string{"name": p})
+			}
+		}
+		if len(result) == 0 {
+			return nil, nil
+		}
+		return result, nil
+
+	case "component":
+		parts := splitCSV(value)
+		result := make([]map[string]string, 0, len(parts))
+		for _, p := range parts {
+			if p != "" {
+				result = append(result, map[string]string{"name": p})
+			}
+		}
+		if len(result) == 0 {
+			return nil, nil
+		}
+		return result, nil
+
+	case "user":
+		parts := splitCSV(value)
+		result := make([]map[string]string, 0, len(parts))
+		for _, email := range parts {
+			email = strings.TrimSpace(email)
+			if email == "" {
+				continue
+			}
+			users, err := client.SearchUsers(email)
+			if err != nil || len(users) == 0 {
+				continue
+			}
+			result = append(result, map[string]string{"accountId": users[0].AccountID})
+		}
+		if len(result) == 0 {
+			return nil, nil
+		}
+		return result, nil
+
+	default:
+		// Fallback: space-separated strings
+		parts := strings.Fields(value)
+		if len(parts) == 0 {
+			return nil, nil
+		}
+		return parts, nil
+	}
+}
+
+// splitCSV splits a comma-separated string, trimming whitespace.
+func splitCSV(s string) []string {
+	parts := strings.Split(s, ",")
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	return result
+}
+
+// parseSimpleYAML parses a simplified YAML file (key: value and key: | multiline).
+// Comments (lines starting with #) are ignored.
+// Returns a map of key → string value.
+func parseSimpleYAML(content string) (map[string]string, error) {
+	result := make(map[string]string)
+	lines := strings.Split(content, "\n")
+
+	var currentKey string
+	var multilineLines []string
+	inMultiline := false
+
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
+
+		// If we're collecting multiline content
+		if inMultiline {
+			// A new key at the start of a line (not indented, not comment) ends multiline
+			if len(line) > 0 && line[0] != ' ' && line[0] != '\t' && line[0] != '#' && strings.Contains(line, ":") {
+				// End current multiline
+				result[currentKey] = strings.Join(multilineLines, "\n")
+				multilineLines = nil
+				inMultiline = false
+				currentKey = ""
+				// Fall through to process this line as a new key
+			} else {
+				// Collect multiline content (strip one level of indentation)
+				stripped := line
+				if len(line) >= 2 && (line[:2] == "  ") {
+					stripped = line[2:]
+				}
+				multilineLines = append(multilineLines, stripped)
+				continue
+			}
+		}
+
+		// Skip comments and blank lines
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+
+		// Parse key: value
+		colonIdx := strings.Index(line, ":")
+		if colonIdx < 0 {
+			continue
+		}
+
+		key := strings.TrimSpace(line[:colonIdx])
+		rest := strings.TrimSpace(line[colonIdx+1:])
+
+		if rest == "|" {
+			// Block scalar — collect following indented lines
+			currentKey = key
+			inMultiline = true
+			multilineLines = nil
+		} else {
+			// Strip surrounding quotes if present
+			val := rest
+			if len(val) >= 2 && val[0] == '"' && val[len(val)-1] == '"' {
+				val = val[1 : len(val)-1]
+			}
+			result[key] = val
+		}
+	}
+
+	// Flush any remaining multiline
+	if inMultiline && currentKey != "" {
+		result[currentKey] = strings.Join(multilineLines, "\n")
+	}
+
+	return result, nil
 }
 
 // parseDiff parses a unified diff string into DiffHunk/DiffLine slices.

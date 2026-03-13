@@ -14,15 +14,26 @@ import (
 type State int
 
 const (
-	StateList       State = iota // issue list
-	StateDetail                  // issue detail
-	StateTransition              // transition modal
-	StateComment                 // comment modal
-	StateAssign                  // assign modal
-	StateEdit                    // field editor (external $EDITOR)
-	StateVote                    // PR vote modal
-	StatePRComment               // PR comment/reply modal
+	StateList            State = iota // issue list
+	StateDetail                       // issue detail
+	StateTransition                   // transition modal
+	StateComment                      // comment modal
+	StateAssign                       // assign modal
+	StateEdit                         // field editor (external $EDITOR)
+	StateVote                         // PR vote modal
+	StatePRComment                    // PR comment/reply modal
+	StateCreateProject                // project picker for new issue
+	StateCreateIssueType              // issue type picker for new issue
 )
+
+// createIssueCtx holds the accumulated context during the multi-step issue creation flow.
+type createIssueCtx struct {
+	projectKey    string
+	projectName   string
+	issueTypeID   string
+	issueTypeName string
+	fields        []api.CreateField
+}
 
 // Model is the root bubbletea model.
 type Model struct {
@@ -37,13 +48,16 @@ type Model struct {
 	statusMsg   string
 
 	// Sub-models
-	list       ListModel
-	detail     DetailModel
-	transition TransitionModel
-	comment    CommentModel
-	assign     AssignModel
-	vote       VoteModel
-	prComment  PRCommentModel
+	list            ListModel
+	detail          DetailModel
+	transition      TransitionModel
+	comment         CommentModel
+	assign          AssignModel
+	vote            VoteModel
+	prComment       PRCommentModel
+	createProject   CreateProjectModel
+	createIssueType CreateIssueTypeModel
+	createCtx       createIssueCtx
 }
 
 // --- Messages ---
@@ -175,6 +189,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case execEditorMsg:
 		return m, MakeExecEditorCmd(msg)
 
+	case projectsLoadedMsg:
+		m.list.loading = false
+		m.createProject = NewCreateProjectModel(msg.projects)
+		m.state = StateCreateProject
+		return m, nil
+
+	case issueTypesForCreateLoadedMsg:
+		m.createCtx.projectKey = msg.projectKey
+		m.createCtx.projectName = msg.projectName
+		m.createIssueType = NewCreateIssueTypeModel(msg.issueTypes)
+		m.state = StateCreateIssueType
+		return m, nil
+
+	case createMetaLoadedMsg:
+		m.createCtx = msg.ctx
+		return m, generateAndOpenCreateEditorCmd(m.client, m.createCtx)
+
+	case execCreateEditorMsg:
+		return m, MakeExecCreateEditorCmd(msg)
+
+	case issueCreatedMsg:
+		m.statusMsg = "Created " + msg.key
+		m.state = StateList
+		m.list.loading = true
+		return m, tea.Batch(m.list.spinner.Tick, m.list.fetchCmd())
+
 	case errMsg:
 		m.err = msg.err
 		m.list.loading = false
@@ -211,6 +251,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleVoteKey(msg)
 	case StatePRComment:
 		return m.handlePRCommentKey(msg)
+	case StateCreateProject:
+		return m.handleCreateProjectKey(msg)
+	case StateCreateIssueType:
+		return m.handleCreateIssueTypeKey(msg)
 	}
 	return m, nil
 }
@@ -232,6 +276,9 @@ func (m Model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		m.list.loading = true
 		return m, tea.Batch(m.list.spinner.Tick, m.list.fetchCmd())
+	case "n":
+		m.list.loading = true
+		return m, tea.Batch(m.list.spinner.Tick, loadProjectsCmd(m.client))
 	case "o":
 		if issue := m.list.selectedIssue(); issue != nil {
 			openBrowser(m.cfg.Jira.URL + "/browse/" + issue.Key)
@@ -433,6 +480,40 @@ func (m Model) updateSubModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) handleCreateProjectKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q", "esc":
+		m.state = StateList
+		m.list.loading = false
+		return m, nil
+	}
+	var cmd tea.Cmd
+	var selected *api.Project
+	m.createProject, selected, cmd = m.createProject.update(msg)
+	if selected != nil {
+		return m, loadIssueTypesForCreateCmd(m.client, selected.Key, selected.Name)
+	}
+	return m, cmd
+}
+
+func (m Model) handleCreateIssueTypeKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q", "esc":
+		m.state = StateCreateProject
+		return m, nil
+	}
+	var cmd tea.Cmd
+	var selected *api.CreateIssueType
+	m.createIssueType, selected, cmd = m.createIssueType.update(msg)
+	if selected != nil {
+		ctx := m.createCtx
+		ctx.issueTypeID = selected.ID
+		ctx.issueTypeName = selected.Name
+		return m, loadCreateMetaCmd(m.client, ctx)
+	}
+	return m, cmd
+}
+
 func (m Model) reloadDetail() (tea.Model, tea.Cmd) {
 	if m.detail.issue == nil || m.detail.issue.Key == "" {
 		m.state = StateList
@@ -462,6 +543,10 @@ func (m Model) View() string {
 		return m.renderOverlay(m.detail.view(), m.vote.view())
 	case StatePRComment:
 		return m.renderOverlay(m.detail.view(), m.prComment.view())
+	case StateCreateProject:
+		return m.renderOverlay(m.list.view(), m.createProject.view())
+	case StateCreateIssueType:
+		return m.renderOverlay(m.list.view(), m.createIssueType.view())
 	}
 	return ""
 }
@@ -471,5 +556,5 @@ func (m Model) renderOverlay(base, modal string) string {
 }
 
 // Help strings
-const listHelp = "↑/↓: navigate  Enter: open  [/]: cycle filter  r: refresh  o: browser  q: quit"
+const listHelp = "↑/↓: navigate  Enter: open  [/]: cycle filter  r: refresh  n: new issue  o: browser  q: quit"
 const detailHelp = "↑/↓: scroll  [/]: tab  t: transition  c: comment/PR comment  a: assign  e: edit  v: vote (PR tab)  y: copy PR link (PR tab)  o: browser  q: back"
