@@ -388,7 +388,7 @@ func (m Model) handleTransitionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.transition, cmd, done = m.transition.update(msg, m.client)
 	if done {
 		m.state = StateDetail
-		return m.reloadDetail()
+		return m, cmd
 	}
 	return m, cmd
 }
