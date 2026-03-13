@@ -321,7 +321,10 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		openBrowser(m.cfg.Jira.URL + "/browse/" + m.detail.issue.Key)
 		return m, nil
 	case "t":
-		return m, loadTransitionsCmd(m.client, m.detail.issue.Key)
+		if m.detail.tabIndex == 0 {
+			return m, loadTransitionsCmd(m.client, m.detail.issue.Key)
+		}
+		return m, nil
 	case "c":
 		// PR tab: open PR comment modal; Jira tab: open Jira comment modal
 		if m.detail.hasPRTab && m.detail.tabIndex == 1 && m.detail.prModel.pr != nil {
@@ -337,9 +340,15 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.state = StateComment
 		return m, m.comment.Init()
 	case "a":
-		return m, loadAssignableUsersCmd(m.client, m.detail.issue.Key)
+		if m.detail.tabIndex == 0 {
+			return m, loadAssignableUsersCmd(m.client, m.detail.issue.Key)
+		}
+		return m, nil
 	case "e":
-		return m, startEditCmd(m.detail.issue, m.client)
+		if m.detail.tabIndex == 0 {
+			return m, startEditCmd(m.detail.issue, m.client)
+		}
+		return m, nil
 	case "v":
 		if m.detail.hasPRTab && m.detail.tabIndex == 1 && m.detail.prModel.pr != nil {
 			m.vote = NewVoteModel(m.detail.prModel.pr)

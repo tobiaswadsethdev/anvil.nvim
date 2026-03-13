@@ -124,14 +124,21 @@ func (m DetailModel) view() string {
 	if m.hasPRTab {
 		tabHint = keyStyle.Render("[/]") + " tab  "
 	}
+	var actionHints string
+	if m.hasPRTab && m.tabIndex == 1 {
+		actionHints = keyStyle.Render("c") + " comment  " +
+			keyStyle.Render("v") + " vote  " +
+			keyStyle.Render("y") + " copy link  "
+	} else {
+		actionHints = keyStyle.Render("t") + " transition  " +
+			keyStyle.Render("c") + " comment  " +
+			keyStyle.Render("a") + " assign  " +
+			keyStyle.Render("e") + " edit  "
+	}
 	helpBar := helpStyle.Width(m.width).Render(
 		"  " + tabHint +
 			keyStyle.Render("↑/↓") + " scroll  " +
-			keyStyle.Render("t") + " transition  " +
-			keyStyle.Render("c") + " comment  " +
-			keyStyle.Render("a") + " assign  " +
-			keyStyle.Render("e") + " edit  " +
-			keyStyle.Render("v") + " vote  " +
+			actionHints +
 			keyStyle.Render("o") + " browser  " +
 			keyStyle.Render("q") + " back",
 	)
