@@ -9,7 +9,7 @@ local defaults = {
   azdo = {
     url     = "",  -- e.g. "https://dev.azure.com/myorg"
     project = "",  -- Azure DevOps project name
-    repo    = "",  -- Git repository name within the project
+    repo    = "",  -- Git repository name within the project (optional — if omitted, all repos are searched)
     token   = "",  -- Personal Access Token (or use AZDO_TOKEN env var)
   },
   filters = {

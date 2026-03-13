@@ -29,9 +29,10 @@ type AzdoConfig struct {
 	Token   string `yaml:"token"`
 }
 
-// IsConfigured reports whether all required Azure DevOps fields are set.
+// IsConfigured reports whether the minimum required Azure DevOps fields are set.
+// Repo is optional — when omitted, PRs are searched across all project repositories.
 func (a AzdoConfig) IsConfigured() bool {
-	return a.URL != "" && a.Project != "" && a.Repo != "" && a.Token != ""
+	return a.URL != "" && a.Project != "" && a.Token != ""
 }
 
 // Config is the root configuration structure.

@@ -36,6 +36,12 @@ func NewAzdoClient(url, project, repo, token string) *AzdoClient {
 
 // --- Types ---
 
+// Repository represents an Azure DevOps git repository.
+type Repository struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
 // PullRequest represents an Azure DevOps pull request.
 type PullRequest struct {
 	PullRequestID int    `json:"pullRequestId"`
@@ -53,6 +59,8 @@ type PullRequest struct {
 	LastMergeTargetCommit struct {
 		CommitID string `json:"commitId"`
 	} `json:"lastMergeTargetCommit"`
+	// RepoName is set client-side during PR search and identifies which repository this PR belongs to.
+	RepoName string `json:"-"`
 }
 
 // Build represents an Azure DevOps pipeline run.
@@ -73,6 +81,7 @@ type ChangedFile struct {
 	ChangeType       string // "add" | "edit" | "delete" | "rename"
 	ObjectID         string // target (source branch) blob SHA
 	OriginalObjectID string // base (target branch) blob SHA
+	RepoName         string // repository this file belongs to (matches the PR's RepoName)
 }
 
 // DiffLine is a single line in a unified diff.
@@ -138,14 +147,31 @@ type PRFilePosition struct {
 }
 
 // PRWebURL returns the browser-accessible URL for a pull request.
-func (c *AzdoClient) PRWebURL(prID int) string {
-	return fmt.Sprintf("%s/%s/_git/%s/pullrequest/%d", c.baseURL, c.project, c.repo, prID)
+func (c *AzdoClient) PRWebURL(pr *PullRequest) string {
+	repo := pr.RepoName
+	if repo == "" {
+		repo = c.repo
+	}
+	return fmt.Sprintf("%s/%s/_git/%s/pullrequest/%d", c.baseURL, c.project, repo, pr.PullRequestID)
 }
 
 // --- Internal helpers ---
 
+func (c *AzdoClient) repoURLFor(repo string) string {
+	return fmt.Sprintf("%s/%s/_apis/git/repositories/%s", c.baseURL, c.project, repo)
+}
+
 func (c *AzdoClient) repoURL() string {
-	return fmt.Sprintf("%s/%s/_apis/git/repositories/%s", c.baseURL, c.project, c.repo)
+	return c.repoURLFor(c.repo)
+}
+
+// prRepoURL returns the repository API base URL for a given pull request,
+// using the PR's RepoName if set, otherwise falling back to the client's configured repo.
+func (c *AzdoClient) prRepoURL(pr *PullRequest) string {
+	if pr.RepoName != "" {
+		return c.repoURLFor(pr.RepoName)
+	}
+	return c.repoURL()
 }
 
 func (c *AzdoClient) buildURL() string {
@@ -264,10 +290,26 @@ func (c *AzdoClient) put(url string, body []byte) ([]byte, error) {
 
 // --- Public API ---
 
-// GetPRByIssueKey finds the most recent PR whose source branch contains the given Jira issue key.
-// Returns nil, nil if no matching PR is found.
-func (c *AzdoClient) GetPRByIssueKey(issueKey string) (*PullRequest, error) {
-	url := fmt.Sprintf("%s/pullrequests?searchCriteria.status=all&$top=50&api-version=7.1", c.repoURL())
+// ListRepos returns all git repositories in the configured Azure DevOps project.
+func (c *AzdoClient) ListRepos() ([]Repository, error) {
+	url := fmt.Sprintf("%s/%s/_apis/git/repositories?api-version=7.1", c.baseURL, c.project)
+	body, err := c.get(url)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Value []Repository `json:"value"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("parsing repositories: %w", err)
+	}
+	return result.Value, nil
+}
+
+// getPRByIssueKeyInRepo searches a single repository for a PR whose source branch contains issueKey.
+func (c *AzdoClient) getPRByIssueKeyInRepo(issueKey, repoName string) (*PullRequest, error) {
+	url := fmt.Sprintf("%s/pullrequests?searchCriteria.status=all&$top=50&api-version=7.1", c.repoURLFor(repoName))
 	body, err := c.get(url)
 	if err != nil {
 		return nil, err
@@ -283,7 +325,35 @@ func (c *AzdoClient) GetPRByIssueKey(issueKey string) (*PullRequest, error) {
 	for i := range result.Value {
 		if strings.Contains(result.Value[i].SourceRefName, issueKey) {
 			pr := result.Value[i]
+			pr.RepoName = repoName
 			return &pr, nil
+		}
+	}
+	return nil, nil
+}
+
+// GetPRByIssueKey finds the most recent PR whose source branch contains the given Jira issue key.
+// If the client was configured with a specific repo, only that repo is searched.
+// If no repo was configured, all repositories in the project are searched.
+// Returns nil, nil if no matching PR is found.
+func (c *AzdoClient) GetPRByIssueKey(issueKey string) (*PullRequest, error) {
+	if c.repo != "" {
+		return c.getPRByIssueKeyInRepo(issueKey, c.repo)
+	}
+
+	// No specific repo configured — search all repos in the project.
+	repos, err := c.ListRepos()
+	if err != nil {
+		return nil, fmt.Errorf("listing repositories: %w", err)
+	}
+	for _, repo := range repos {
+		pr, err := c.getPRByIssueKeyInRepo(issueKey, repo.Name)
+		if err != nil {
+			// Non-fatal: skip repos that fail (e.g. permission denied) and keep searching.
+			continue
+		}
+		if pr != nil {
+			return pr, nil
 		}
 	}
 	return nil, nil
@@ -296,7 +366,7 @@ func (c *AzdoClient) GetChangedFiles(pr *PullRequest) ([]ChangedFile, error) {
 
 	url := fmt.Sprintf(
 		"%s/diffs/commits?baseVersion=%s&targetVersion=%s&baseVersionType=Branch&targetVersionType=Branch&$top=200&api-version=7.1",
-		c.repoURL(), base, target,
+		c.prRepoURL(pr), base, target,
 	)
 	body, err := c.get(url)
 	if err != nil {
@@ -324,18 +394,24 @@ func (c *AzdoClient) GetChangedFiles(pr *PullRequest) ([]ChangedFile, error) {
 			ChangeType:       ch.ChangeType,
 			ObjectID:         ch.Item.ObjectID,
 			OriginalObjectID: ch.Item.OriginalObjectID,
+			RepoName:         pr.RepoName,
 		})
 	}
 	return files, nil
 }
 
 // GetBlob fetches the raw content of a git blob by its SHA.
+// repo identifies the repository; if empty the client's configured repo is used.
 // Returns empty string if objectID is empty.
-func (c *AzdoClient) GetBlob(objectID string) (string, error) {
+func (c *AzdoClient) GetBlob(objectID, repo string) (string, error) {
 	if objectID == "" {
 		return "", nil
 	}
-	url := fmt.Sprintf("%s/blobs/%s?api-version=7.1", c.repoURL(), objectID)
+	repoBase := c.repoURL()
+	if repo != "" {
+		repoBase = c.repoURLFor(repo)
+	}
+	url := fmt.Sprintf("%s/blobs/%s?api-version=7.1", repoBase, objectID)
 	body, err := c.getRaw(url)
 	if err != nil {
 		return "", err
@@ -370,7 +446,7 @@ func (c *AzdoClient) GetLatestBuild(sourceRefName string) (*Build, error) {
 
 // GetReviewers returns the list of reviewers and their votes for a pull request.
 func (c *AzdoClient) GetReviewers(pr *PullRequest) ([]Reviewer, error) {
-	url := fmt.Sprintf("%s/pullRequests/%d/reviewers?api-version=7.1", c.repoURL(), pr.PullRequestID)
+	url := fmt.Sprintf("%s/pullRequests/%d/reviewers?api-version=7.1", c.prRepoURL(pr), pr.PullRequestID)
 	body, err := c.get(url)
 	if err != nil {
 		return nil, err
@@ -412,7 +488,7 @@ func (c *AzdoClient) GetCurrentUserID() (string, error) {
 // SubmitVote casts a vote on a pull request as the given reviewer.
 // vote: -10=Rejected, -5=WaitingForAuthor, 0=NoVote, 5=ApprovedWithSuggestions, 10=Approved
 func (c *AzdoClient) SubmitVote(pr *PullRequest, vote int, reviewerID string) error {
-	url := fmt.Sprintf("%s/pullRequests/%d/reviewers/%s?api-version=7.1", c.repoURL(), pr.PullRequestID, reviewerID)
+	url := fmt.Sprintf("%s/pullRequests/%d/reviewers/%s?api-version=7.1", c.prRepoURL(pr), pr.PullRequestID, reviewerID)
 	payload, err := json.Marshal(map[string]int{"vote": vote})
 	if err != nil {
 		return err
@@ -423,7 +499,7 @@ func (c *AzdoClient) SubmitVote(pr *PullRequest, vote int, reviewerID string) er
 
 // GetPRThreads returns all non-system, non-deleted comment threads for a pull request.
 func (c *AzdoClient) GetPRThreads(pr *PullRequest) ([]PRCommentThread, error) {
-	url := fmt.Sprintf("%s/pullRequests/%d/threads?api-version=7.1", c.repoURL(), pr.PullRequestID)
+	url := fmt.Sprintf("%s/pullRequests/%d/threads?api-version=7.1", c.prRepoURL(pr), pr.PullRequestID)
 	body, err := c.get(url)
 	if err != nil {
 		return nil, err
@@ -473,7 +549,7 @@ func (c *AzdoClient) AddPRThread(pr *PullRequest, content string, ctx *PRThreadC
 		return err
 	}
 
-	url := fmt.Sprintf("%s/pullRequests/%d/threads?api-version=7.1", c.repoURL(), pr.PullRequestID)
+	url := fmt.Sprintf("%s/pullRequests/%d/threads?api-version=7.1", c.prRepoURL(pr), pr.PullRequestID)
 	_, err = c.post(url, payload)
 	return err
 }
@@ -496,7 +572,7 @@ func (c *AzdoClient) ReplyToPRThread(pr *PullRequest, threadID, parentCommentID 
 		return err
 	}
 
-	url := fmt.Sprintf("%s/pullRequests/%d/threads/%d/comments?api-version=7.1", c.repoURL(), pr.PullRequestID, threadID)
+	url := fmt.Sprintf("%s/pullRequests/%d/threads/%d/comments?api-version=7.1", c.prRepoURL(pr), pr.PullRequestID, threadID)
 	_, err = c.post(url, payload)
 	return err
 }

@@ -378,11 +378,11 @@ func computeFileDiff(client *api.AzdoClient, f api.ChangedFile) api.FileDiff {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		baseContent, _ = client.GetBlob(f.OriginalObjectID)
+		baseContent, _ = client.GetBlob(f.OriginalObjectID, f.RepoName)
 	}()
 	go func() {
 		defer wg.Done()
-		targetContent, _ = client.GetBlob(f.ObjectID)
+		targetContent, _ = client.GetBlob(f.ObjectID, f.RepoName)
 	}()
 	wg.Wait()
 

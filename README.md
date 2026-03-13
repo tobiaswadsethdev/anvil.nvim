@@ -76,7 +76,7 @@ require('anvil').setup({
   azdo = {
     url     = "https://dev.azure.com/myorg",
     project = "myproject",
-    repo    = "myrepo",
+    repo    = "myrepo",   -- optional: if omitted, all repos in the project are searched
     token   = vim.env.AZDO_TOKEN,
   },
 
@@ -125,7 +125,7 @@ When `position = "float"`, setting `rounded = true` draws a rounded border aroun
 | `JIRA_TOKEN`   | Jira API token                   |
 | `AZDO_URL`     | Azure DevOps organization URL    |
 | `AZDO_PROJECT` | Azure DevOps project name        |
-| `AZDO_REPO`    | Git repository name              |
+| `AZDO_REPO`    | Git repository name *(optional)* |
 | `AZDO_TOKEN`   | Azure DevOps personal access token |
 
 ## Usage
@@ -175,6 +175,18 @@ When `position = "float"`, setting `rounded = true` draws a rounded border aroun
 ## Azure DevOps PR Tab
 
 When Azure DevOps is configured, opening any issue detail automatically fetches the linked pull request. The PR is found by searching for a branch whose name contains the Jira issue key — `feature/CODE-123`, `fix/CODE-123`, and `docs/CODE-123` all resolve to `CODE-123` regardless of your current local branch.
+
+If `repo` is not set, **all repositories** in the configured project are searched in order and the first matching PR is used. Set `repo` to restrict the search to a single repository and speed up lookup.
+
+### Personal Access Token scopes
+
+Create your PAT at `https://dev.azure.com/<org>/_usersSettings/tokens` with at minimum:
+
+| Scope | Permission | Required for                              |
+|-------|------------|-------------------------------------------|
+| Code  | Read       | Viewing PRs, diffs, and file contents     |
+| Code  | Write      | Voting on PRs and adding comments         |
+| Build | Read       | Displaying pipeline build status          |
 
 The **Pull Request** tab shows:
 
