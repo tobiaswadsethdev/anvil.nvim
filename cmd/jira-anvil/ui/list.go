@@ -192,6 +192,7 @@ func (m ListModel) view() string {
 		"  " + keyStyle.Render("[/]") + " cycle  " +
 			keyStyle.Render("Enter") + " open  " +
 			keyStyle.Render("r") + " refresh  " +
+			keyStyle.Render("n") + " new  " +
 			keyStyle.Render("o") + " browser  " +
 			keyStyle.Render("q") + " quit",
 	)

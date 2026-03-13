@@ -622,6 +622,186 @@ func (m PRCommentModel) Init() tea.Cmd {
 	return textarea.Blink
 }
 
+// --- CreateProjectModel ---
+
+// CreateProjectModel shows a searchable list of Jira projects for issue creation.
+type CreateProjectModel struct {
+	projects []api.Project
+	filtered []api.Project
+	cursor   int
+	search   textinput.Model
+}
+
+func NewCreateProjectModel(projects []api.Project) CreateProjectModel {
+	ti := textinput.New()
+	ti.Placeholder = "Search project..."
+	ti.Focus()
+	ti.Width = 40
+
+	return CreateProjectModel{
+		projects: projects,
+		filtered: projects,
+		search:   ti,
+	}
+}
+
+// update returns the updated model, the selected project (nil if not yet selected), and a cmd.
+func (m CreateProjectModel) update(msg tea.Msg) (CreateProjectModel, *api.Project, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "enter":
+			if len(m.filtered) > 0 {
+				p := m.filtered[m.cursor]
+				return m, &p, nil
+			}
+		case "j", "down":
+			if m.cursor < len(m.filtered)-1 {
+				m.cursor++
+			}
+		case "k", "up":
+			if m.cursor > 0 {
+				m.cursor--
+			}
+		default:
+			var cmd tea.Cmd
+			m.search, cmd = m.search.Update(msg)
+			m.filterProjects()
+			m.cursor = 0
+			return m, nil, cmd
+		}
+	default:
+		var cmd tea.Cmd
+		m.search, cmd = m.search.Update(msg)
+		return m, nil, cmd
+	}
+	return m, nil, nil
+}
+
+func (m *CreateProjectModel) filterProjects() {
+	query := strings.ToLower(m.search.Value())
+	if query == "" {
+		m.filtered = m.projects
+		return
+	}
+	var result []api.Project
+	for _, p := range m.projects {
+		if strings.Contains(strings.ToLower(p.Name), query) ||
+			strings.Contains(strings.ToLower(p.Key), query) {
+			result = append(result, p)
+		}
+	}
+	m.filtered = result
+}
+
+func (m CreateProjectModel) view() string {
+	var sb strings.Builder
+	sb.WriteString(modalTitleStyle.Render("Select Project") + "\n\n")
+	sb.WriteString(m.search.View() + "\n\n")
+
+	maxVisible := 10
+	start := 0
+	if m.cursor >= maxVisible {
+		start = m.cursor - maxVisible + 1
+	}
+
+	shown := m.filtered[start:]
+	if len(shown) > maxVisible {
+		shown = shown[:maxVisible]
+	}
+
+	for i, p := range shown {
+		realIdx := start + i
+		label := p.Key + " — " + p.Name
+		if realIdx == m.cursor {
+			sb.WriteString(selectedItemStyle.Render("  "+label) + "\n")
+		} else {
+			sb.WriteString(normalItemStyle.Render("  "+label) + "\n")
+		}
+	}
+
+	if len(m.filtered) == 0 {
+		sb.WriteString(lipgloss.NewStyle().Foreground(colorMuted).Render("  No projects found") + "\n")
+	}
+
+	sb.WriteString("\n" + helpStyle.Render(
+		keyStyle.Render("j/k")+" navigate  "+
+			keyStyle.Render("Enter")+" select  "+
+			keyStyle.Render("Esc")+" cancel",
+	))
+	return modalStyle.Render(sb.String())
+}
+
+// --- CreateIssueTypeModel ---
+
+// CreateIssueTypeModel shows a list of issue types for issue creation.
+type CreateIssueTypeModel struct {
+	issueTypes []api.CreateIssueType
+	cursor     int
+}
+
+func NewCreateIssueTypeModel(issueTypes []api.CreateIssueType) CreateIssueTypeModel {
+	return CreateIssueTypeModel{
+		issueTypes: issueTypes,
+		cursor:     0,
+	}
+}
+
+// update returns the updated model, the selected issue type (nil if not yet selected), and a cmd.
+func (m CreateIssueTypeModel) update(msg tea.Msg) (CreateIssueTypeModel, *api.CreateIssueType, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "j", "down":
+			if m.cursor < len(m.issueTypes)-1 {
+				m.cursor++
+			}
+		case "k", "up":
+			if m.cursor > 0 {
+				m.cursor--
+			}
+		case "enter":
+			if len(m.issueTypes) > 0 {
+				t := m.issueTypes[m.cursor]
+				return m, &t, nil
+			}
+		default:
+			for i := range m.issueTypes {
+				if msg.String() == fmt.Sprintf("%d", i+1) {
+					t := m.issueTypes[i]
+					return m, &t, nil
+				}
+			}
+		}
+	}
+	return m, nil, nil
+}
+
+func (m CreateIssueTypeModel) view() string {
+	var sb strings.Builder
+	sb.WriteString(modalTitleStyle.Render("Select Issue Type") + "\n\n")
+
+	for i, t := range m.issueTypes {
+		num := fmt.Sprintf("%d. ", i+1)
+		label := num + t.Name
+		if t.Description != "" {
+			label += lipgloss.NewStyle().Foreground(colorMuted).Render("  "+t.Description)
+		}
+		if i == m.cursor {
+			sb.WriteString(selectedItemStyle.Render(label) + "\n")
+		} else {
+			sb.WriteString(normalItemStyle.Render(label) + "\n")
+		}
+	}
+
+	sb.WriteString("\n" + helpStyle.Render(
+		keyStyle.Render("j/k")+" navigate  "+
+			keyStyle.Render("Enter/number")+" select  "+
+			keyStyle.Render("Esc")+" back",
+	))
+	return modalStyle.Render(sb.String())
+}
+
 func (m PRCommentModel) view() string {
 	var sb strings.Builder
 

@@ -287,3 +287,133 @@ func (c *Client) AssignIssue(key, accountID string) error {
 	_, err := c.do("PUT", "/rest/api/3/issue/"+key+"/assignee", body)
 	return err
 }
+
+// --- Issue creation types ---
+
+// Project represents a Jira project.
+type Project struct {
+	ID   string `json:"id"`
+	Key  string `json:"key"`
+	Name string `json:"name"`
+}
+
+// CreateIssueType represents an issue type available for creating issues in a project.
+type CreateIssueType struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+// AllowedValue represents an allowed value for a field (option, priority, version, component, etc.).
+type AllowedValue struct {
+	ID    string `json:"id"`
+	Value string `json:"value"` // for option-type fields
+	Name  string `json:"name"`  // for priority, version, component
+}
+
+// CreateFieldSchema describes the data type of a field available during issue creation.
+type CreateFieldSchema struct {
+	Type   string `json:"type"`   // string, number, array, date, datetime, user, option, priority, etc.
+	Items  string `json:"items"`  // for array fields: string, option, user, version, component
+	Custom string `json:"custom"` // custom field type URI
+	System string `json:"system"`
+}
+
+// CreateField is metadata about a field available when creating an issue.
+type CreateField struct {
+	FieldID       string            `json:"fieldId"`
+	Name          string            `json:"name"`
+	Required      bool              `json:"required"`
+	Schema        CreateFieldSchema `json:"schema"`
+	AllowedValues []AllowedValue    `json:"allowedValues"`
+}
+
+// --- Issue creation API methods ---
+
+// GetProjects returns all projects accessible to the authenticated user.
+func (c *Client) GetProjects() ([]Project, error) {
+	data, err := c.do("GET", "/rest/api/3/project?maxResults=200&orderBy=name", nil)
+	if err != nil {
+		return nil, err
+	}
+	var projects []Project
+	if err := json.Unmarshal(data, &projects); err != nil {
+		return nil, err
+	}
+	return projects, nil
+}
+
+// GetCreateMetaIssueTypes returns the issue types available for creating issues in a project.
+func (c *Client) GetCreateMetaIssueTypes(projectKey string) ([]CreateIssueType, error) {
+	data, err := c.do("GET", "/rest/api/3/issue/createmeta/"+url.PathEscape(projectKey)+"/issuetypes", nil)
+	if err != nil {
+		return nil, err
+	}
+	var result struct {
+		IssueTypes []CreateIssueType `json:"issueTypes"`
+	}
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, err
+	}
+	return result.IssueTypes, nil
+}
+
+// GetCreateMetaFields returns all fields available when creating an issue of the given type in the given project.
+// It fetches all pages automatically.
+func (c *Client) GetCreateMetaFields(projectKey, issueTypeID string) ([]CreateField, error) {
+	basePath := "/rest/api/3/issue/createmeta/" + url.PathEscape(projectKey) + "/issuetypes/" + url.PathEscape(issueTypeID)
+	var allFields []CreateField
+	startAt := 0
+	for {
+		path := fmt.Sprintf("%s?startAt=%d&maxResults=50", basePath, startAt)
+		data, err := c.do("GET", path, nil)
+		if err != nil {
+			return nil, err
+		}
+		var result struct {
+			Fields     []CreateField `json:"fields"`
+			Total      int           `json:"total"`
+			MaxResults int           `json:"maxResults"`
+			StartAt    int           `json:"startAt"`
+		}
+		if err := json.Unmarshal(data, &result); err != nil {
+			return nil, err
+		}
+		allFields = append(allFields, result.Fields...)
+		if len(allFields) >= result.Total || len(result.Fields) == 0 {
+			break
+		}
+		startAt += len(result.Fields)
+	}
+	return allFields, nil
+}
+
+// CreateIssue creates a new Jira issue and returns the new issue key (e.g. "PROJ-123").
+func (c *Client) CreateIssue(fields map[string]interface{}) (string, error) {
+	body := map[string]interface{}{"fields": fields}
+	data, err := c.do("POST", "/rest/api/3/issue", body)
+	if err != nil {
+		return "", err
+	}
+	var result struct {
+		Key string `json:"key"`
+	}
+	if err := json.Unmarshal(data, &result); err != nil {
+		return "", err
+	}
+	return result.Key, nil
+}
+
+// SearchUsers searches for users by display name or email address.
+func (c *Client) SearchUsers(query string) ([]User, error) {
+	path := "/rest/api/3/user/search?query=" + url.QueryEscape(query) + "&maxResults=10"
+	data, err := c.do("GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+	var users []User
+	if err := json.Unmarshal(data, &users); err != nil {
+		return nil, err
+	}
+	return users, nil
+}
