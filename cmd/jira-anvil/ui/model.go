@@ -349,7 +349,7 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "y":
 		if m.detail.hasPRTab && m.detail.tabIndex == 1 && m.detail.prModel.pr != nil {
-			url := m.azdoClient.PRWebURL(m.detail.prModel.pr.PullRequestID)
+			url := m.azdoClient.PRWebURL(m.detail.prModel.pr)
 			if copyToClipboard(url) {
 				m.statusMsg = "PR link copied to clipboard"
 			} else {
