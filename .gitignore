@@ -10,6 +10,8 @@ luac.out
 # Built binaries (produced by `make build`)
 bin/jira-anvil
 bin/azdo-anvil
+cmd/jira-anvil/jira-anvil
+cmd/azdo-anvil/azdo-anvil
 
 # Go test cache / coverage
 *.test
