@@ -10,36 +10,41 @@ import (
 	"github.com/tobiaswadsethdev/anvil.nvim/cmd/jira-anvil/api"
 )
 
-// PRDetailModel renders the Pull Request tab in the issue detail view.
+// PRDetailModel renders PR data across two panels: overview (left) and files/diff (right).
 type PRDetailModel struct {
 	pr        *api.PullRequest
 	build     *api.Build
 	fileDiffs []api.FileDiff
 	reviewers []api.Reviewer
 	threads   []api.PRCommentThread
-	viewport  viewport.Model
-	loading   bool
-	notFound  bool
-	err       error
-	width     int
-	height    int
+
+	// Files/Diff/Comments panel
+	filesTabIndex  int // 0=Files, 1=Diff, 2=Comments
+	filesViewport  viewport.Model
+
+	loading  bool
+	notFound bool
+	err      error
+	width    int
+	height   int
 }
 
 // NewPRDetailModel creates a loading PR detail model.
 func NewPRDetailModel(w, h int) PRDetailModel {
-	vp := viewport.New(w, prViewportHeight(h))
+	_, _, botH := panelHeights(h, true)
+	vpH := botH - 4
+	if vpH < 1 {
+		vpH = 1
+	}
+	_, rightW := columnWidths(w)
+	vp := viewport.New(rightW-4, vpH)
 	vp.SetContent(lipgloss.NewStyle().Foreground(colorMuted).Padding(1, 2).Render("Fetching pull request data..."))
 	return PRDetailModel{
-		loading:  true,
-		viewport: vp,
-		width:    w,
-		height:   h,
+		loading:       true,
+		filesViewport: vp,
+		width:         w,
+		height:        h,
 	}
-}
-
-func prViewportHeight(h int) int {
-	// title(1) + tabBar(1) + statusBar(1) + helpBar(1) + padding(3)
-	return h - 7
 }
 
 func (m PRDetailModel) setData(pr *api.PullRequest, build *api.Build, fileDiffs []api.FileDiff, reviewers []api.Reviewer, threads []api.PRCommentThread) PRDetailModel {
@@ -52,118 +57,197 @@ func (m PRDetailModel) setData(pr *api.PullRequest, build *api.Build, fileDiffs 
 	if pr == nil {
 		m.notFound = true
 	}
-	m.viewport.SetContent(renderPRContent(pr, build, fileDiffs, reviewers, threads, m.width))
+	_, rightW := columnWidths(m.width)
+	m.filesViewport.SetContent(renderFilesContent(m.filesTabIndex, fileDiffs, threads, rightW-4))
 	return m
 }
 
 func (m PRDetailModel) setReviewers(reviewers []api.Reviewer) PRDetailModel {
 	m.reviewers = reviewers
-	m.viewport.SetContent(renderPRContent(m.pr, m.build, m.fileDiffs, reviewers, m.threads, m.width))
+	_, rightW := columnWidths(m.width)
+	m.filesViewport.SetContent(renderFilesContent(m.filesTabIndex, m.fileDiffs, m.threads, rightW-4))
 	return m
 }
 
 func (m PRDetailModel) setThreads(threads []api.PRCommentThread) PRDetailModel {
 	m.threads = threads
-	m.viewport.SetContent(renderPRContent(m.pr, m.build, m.fileDiffs, m.reviewers, threads, m.width))
+	_, rightW := columnWidths(m.width)
+	m.filesViewport.SetContent(renderFilesContent(m.filesTabIndex, m.fileDiffs, threads, rightW-4))
 	return m
 }
 
 func (m PRDetailModel) setError(err error) PRDetailModel {
 	m.loading = false
 	m.err = err
-	m.viewport.SetContent(lipgloss.NewStyle().Foreground(colorRed).Padding(1, 2).Render("Error: " + err.Error()))
+	m.filesViewport.SetContent(lipgloss.NewStyle().Foreground(colorRed).Padding(1, 2).Render("Error: " + err.Error()))
 	return m
 }
 
-func (m PRDetailModel) setSize(w, h int) PRDetailModel {
+// setSize is called when the terminal is resized.
+// botPanelH is the outer height for the bottom row panels.
+func (m PRDetailModel) setSize(w, h, botPanelH int) PRDetailModel {
 	m.width = w
 	m.height = h
-	m.viewport.Width = w
-	m.viewport.Height = prViewportHeight(h)
+
+	_, rightW := columnWidths(w)
+	vpH := botPanelH - 4
+	if vpH < 1 {
+		vpH = 1
+	}
+	m.filesViewport.Width = rightW - 4
+	m.filesViewport.Height = vpH
 	if !m.loading && m.err == nil {
-		m.viewport.SetContent(renderPRContent(m.pr, m.build, m.fileDiffs, m.reviewers, m.threads, w))
+		m.filesViewport.SetContent(renderFilesContent(m.filesTabIndex, m.fileDiffs, m.threads, rightW-4))
 	}
 	return m
 }
 
-func (m PRDetailModel) update(msg tea.Msg) (PRDetailModel, tea.Cmd) {
+// updateFilesViewport passes scroll messages to the files viewport.
+func (m PRDetailModel) updateFilesViewport(msg tea.Msg) (PRDetailModel, tea.Cmd) {
 	var cmd tea.Cmd
-	m.viewport, cmd = m.viewport.Update(msg)
+	m.filesViewport, cmd = m.filesViewport.Update(msg)
 	return m, cmd
 }
 
-func (m PRDetailModel) view() string {
-	return m.viewport.View()
-}
-
-// renderPRContent builds the full scrollable content for the PR tab.
-func renderPRContent(pr *api.PullRequest, build *api.Build, fileDiffs []api.FileDiff, reviewers []api.Reviewer, threads []api.PRCommentThread, width int) string {
-	if pr == nil {
-		return lipgloss.NewStyle().
-			Foreground(colorMuted).
-			Padding(2, 2).
-			Render("No linked pull request found for this issue.\n\nA pull request must have a source branch\ncontaining the Jira issue key (e.g. feature/CODE-123).")
+// renderOverviewPanel renders the compact PR overview for the left-bottom panel.
+func (m PRDetailModel) renderOverviewPanel(outerW, outerH int, active bool) string {
+	innerW := outerW - 4
+	innerH := outerH - 2
+	if innerW < 1 {
+		innerW = 1
+	}
+	if innerH < 1 {
+		innerH = 1
 	}
 
 	var sb strings.Builder
+	sb.WriteString(renderPanelTitle(2, "Pull Request", active) + "\n")
+	sb.WriteString(strings.Repeat("─", innerW) + "\n")
 
-	// PR Header
-	sb.WriteString(sectionStyle.Render("Pull Request") + "\n")
-
-	sourceBranch := strings.TrimPrefix(pr.SourceRefName, "refs/heads/")
-	targetBranch := strings.TrimPrefix(pr.TargetRefName, "refs/heads/")
-
-	writeField(&sb, "Title", pr.Title)
-	writeField(&sb, "Status", colorPRStatus(pr.Status))
-	writeField(&sb, "Author", pr.CreatedBy.DisplayName)
-	writeField(&sb, "Created", formatTime(pr.CreationDate))
-	writeField(&sb, "Source", sourceBranch)
-	writeField(&sb, "Target", "→ "+targetBranch)
-
-	// Pipeline
-	sb.WriteString("\n")
-	sb.WriteString(sectionStyle.Render("Pipeline") + "\n")
-	if build == nil {
-		sb.WriteString("  " + lipgloss.NewStyle().Foreground(colorMuted).Render("No pipeline runs found") + "\n")
+	if m.loading {
+		sb.WriteString(lipgloss.NewStyle().Foreground(colorMuted).Render("Loading..."))
+	} else if m.err != nil {
+		sb.WriteString(lipgloss.NewStyle().Foreground(colorRed).Render("Error: " + TruncateString(m.err.Error(), innerW-8)))
+	} else if m.notFound || m.pr == nil {
+		sb.WriteString(lipgloss.NewStyle().Foreground(colorMuted).
+			Render("No linked PR found.\n\nBranch must contain\nthe Jira issue key."))
 	} else {
-		sb.WriteString("  " + colorBuildStatus(build.Status, build.Result) + "\n")
-		if build.Definition.Name != "" {
-			writeField(&sb, "  Pipeline", build.Definition.Name)
-		}
-		if build.BuildNumber != "" {
-			writeField(&sb, "  Build", "#"+build.BuildNumber)
-		}
-		if !build.StartTime.IsZero() {
-			writeField(&sb, "  Started", formatTime(build.StartTime))
-		}
-	}
+		pr := m.pr
+		sourceBranch := strings.TrimPrefix(pr.SourceRefName, "refs/heads/")
+		targetBranch := strings.TrimPrefix(pr.TargetRefName, "refs/heads/")
 
-	// Reviewers
-	sb.WriteString("\n")
-	sb.WriteString(sectionStyle.Render("Reviewers") + "\n")
-	if len(reviewers) == 0 {
-		sb.WriteString("  " + lipgloss.NewStyle().Foreground(colorMuted).Render("No reviewers assigned") + "\n")
-	} else {
-		for _, r := range reviewers {
-			sb.WriteString(fmt.Sprintf("  %-30s %s\n",
-				lipgloss.NewStyle().Foreground(colorFg).Render(r.DisplayName),
-				colorVoteLabel(r.Vote),
-			))
-		}
-	}
+		sb.WriteString(fieldLabelStyle.Render("Status:") + " " + colorPRStatus(pr.Status) + "\n")
+		sb.WriteString(fieldLabelStyle.Render("Author:") + " " +
+			fieldValueStyle.Render(TruncateString(pr.CreatedBy.DisplayName, innerW-16)) + "\n")
+		sb.WriteString(fieldLabelStyle.Render("Branch:") + " " +
+			fieldValueStyle.Render(TruncateString(sourceBranch+" → "+targetBranch, innerW-16)) + "\n")
 
-	// Changed files summary
-	if len(fileDiffs) > 0 {
+		// Pipeline
 		sb.WriteString("\n")
-		sb.WriteString(sectionStyle.Render(fmt.Sprintf("Changed Files (%d)", len(fileDiffs))) + "\n\n")
-		for _, fd := range fileDiffs {
-			icon := changeTypeIcon(fd.ChangeType)
-			path := lipgloss.NewStyle().Foreground(colorFg).Render(fd.Path)
-			sb.WriteString(fmt.Sprintf("  %s  %s\n", icon, path))
+		if m.build == nil {
+			sb.WriteString(lipgloss.NewStyle().Foreground(colorMuted).Render("Pipeline: none") + "\n")
+		} else {
+			sb.WriteString(fieldLabelStyle.Render("Pipeline:") + " " + colorBuildStatus(m.build.Status, m.build.Result) + "\n")
+		}
+
+		// Reviewers
+		sb.WriteString("\n")
+		sb.WriteString(sectionStyle.Render("Reviewers") + "\n")
+		if len(m.reviewers) == 0 {
+			sb.WriteString("  " + lipgloss.NewStyle().Foreground(colorMuted).Render("None assigned") + "\n")
+		} else {
+			for _, r := range m.reviewers {
+				line := fmt.Sprintf("  %-20s %s",
+					TruncateString(r.DisplayName, 20),
+					colorVoteLabel(r.Vote),
+				)
+				sb.WriteString(TruncateString(line, innerW) + "\n")
+			}
 		}
 	}
 
-	// Diffs
+	style := panelInactiveStyle
+	if active {
+		style = panelActiveStyle
+	}
+	return style.Width(innerW).Height(innerH).Render(sb.String())
+}
+
+// renderFilesPanel renders the PR files/diff/comments panel (right-bottom).
+func (m PRDetailModel) renderFilesPanel(outerW, outerH int, active bool) string {
+	innerW := outerW - 4
+	innerH := outerH - 2
+	if innerW < 1 {
+		innerW = 1
+	}
+	if innerH < 1 {
+		innerH = 1
+	}
+
+	tabs := []string{"Files", "Diff", "Comments"}
+	title := renderPanelTitle(4, "PR Files", active)
+	tabBar := renderPanelTabs(tabs, m.filesTabIndex, innerW)
+	divider := strings.Repeat("─", innerW)
+
+	var vpContent string
+	if m.loading {
+		vpContent = lipgloss.NewStyle().Foreground(colorMuted).Render("Loading...")
+	} else {
+		vpContent = m.filesViewport.View()
+	}
+
+	content := lipgloss.JoinVertical(lipgloss.Left,
+		title,
+		tabBar,
+		divider,
+		vpContent,
+	)
+
+	style := panelInactiveStyle
+	if active {
+		style = panelActiveStyle
+	}
+	return style.Width(innerW).Height(innerH).Render(content)
+}
+
+// refreshFilesViewport rebuilds the files viewport content after a tab switch.
+func (m *PRDetailModel) refreshFilesViewport() {
+	_, rightW := columnWidths(m.width)
+	innerW := rightW - 4
+	if innerW < 1 {
+		innerW = 1
+	}
+	m.filesViewport.SetContent(renderFilesContent(m.filesTabIndex, m.fileDiffs, m.threads, innerW))
+	m.filesViewport.GotoTop()
+}
+
+// renderFilesContent returns viewport content for the given tab index.
+func renderFilesContent(tabIndex int, fileDiffs []api.FileDiff, threads []api.PRCommentThread, width int) string {
+	switch tabIndex {
+	case 0:
+		return renderFilesTab(fileDiffs)
+	case 1:
+		return renderDiffTab(fileDiffs)
+	case 2:
+		return renderPRCommentsTab(threads)
+	}
+	return ""
+}
+
+func renderFilesTab(fileDiffs []api.FileDiff) string {
+	if len(fileDiffs) == 0 {
+		return lipgloss.NewStyle().Foreground(colorMuted).Render("  (no changed files)")
+	}
+	var sb strings.Builder
+	for _, fd := range fileDiffs {
+		icon := changeTypeIcon(fd.ChangeType)
+		path := lipgloss.NewStyle().Foreground(colorFg).Render(fd.Path)
+		sb.WriteString(fmt.Sprintf("  %s  %s\n", icon, path))
+	}
+	return sb.String()
+}
+
+func renderDiffTab(fileDiffs []api.FileDiff) string {
 	hasDiffs := false
 	for _, fd := range fileDiffs {
 		if len(fd.Hunks) > 0 || fd.Binary {
@@ -171,92 +255,85 @@ func renderPRContent(pr *api.PullRequest, build *api.Build, fileDiffs []api.File
 			break
 		}
 	}
-	if hasDiffs {
+	if !hasDiffs {
+		return lipgloss.NewStyle().Foreground(colorMuted).Render("  (no diff available)")
+	}
+
+	var sb strings.Builder
+	for _, fd := range fileDiffs {
+		if len(fd.Hunks) == 0 && !fd.Binary {
+			continue
+		}
+		fileHeader := lipgloss.NewStyle().
+			Foreground(colorSecond).
+			Bold(true).
+			Render("┌ " + changeTypeLabel(fd.ChangeType) + ": " + fd.Path)
+		sb.WriteString(fileHeader + "\n")
+
+		if fd.Binary {
+			sb.WriteString(lipgloss.NewStyle().Foreground(colorMuted).Render("  [binary file]") + "\n\n")
+			continue
+		}
+		for _, hunk := range fd.Hunks {
+			sb.WriteString(lipgloss.NewStyle().Foreground(colorSecond).Render(hunk.Header) + "\n")
+			for _, line := range hunk.Lines {
+				switch line.Type {
+				case "added":
+					sb.WriteString(lipgloss.NewStyle().Foreground(colorGreen).Render("+"+line.Content) + "\n")
+				case "deleted":
+					sb.WriteString(lipgloss.NewStyle().Foreground(colorRed).Render("-"+line.Content) + "\n")
+				default:
+					sb.WriteString(lipgloss.NewStyle().Foreground(colorMuted).Render(" "+line.Content) + "\n")
+				}
+			}
+		}
 		sb.WriteString("\n")
-		sb.WriteString(sectionStyle.Render("Diff") + "\n")
-		for _, fd := range fileDiffs {
-			if len(fd.Hunks) == 0 && !fd.Binary {
-				continue
-			}
-			sb.WriteString("\n")
-			// File header
-			fileHeader := lipgloss.NewStyle().
-				Foreground(colorSecond).
-				Bold(true).
-				Render("┌ " + changeTypeLabel(fd.ChangeType) + ": " + fd.Path)
-			sb.WriteString(fileHeader + "\n")
-
-			if fd.Binary {
-				sb.WriteString(lipgloss.NewStyle().Foreground(colorMuted).Render("  [binary file]") + "\n")
-				continue
-			}
-
-			for _, hunk := range fd.Hunks {
-				// Hunk header
-				sb.WriteString(lipgloss.NewStyle().Foreground(colorSecond).Render(hunk.Header) + "\n")
-				for _, line := range hunk.Lines {
-					switch line.Type {
-					case "added":
-						sb.WriteString(lipgloss.NewStyle().Foreground(colorGreen).Render("+"+line.Content) + "\n")
-					case "deleted":
-						sb.WriteString(lipgloss.NewStyle().Foreground(colorRed).Render("-"+line.Content) + "\n")
-					default:
-						sb.WriteString(lipgloss.NewStyle().Foreground(colorMuted).Render(" "+line.Content) + "\n")
-					}
-				}
-			}
-		}
 	}
+	return sb.String()
+}
 
-	// Comments
-	sb.WriteString("\n")
-	sb.WriteString(sectionStyle.Render(fmt.Sprintf("Comments (%d)", len(threads))) + "\n")
+func renderPRCommentsTab(threads []api.PRCommentThread) string {
 	if len(threads) == 0 {
-		sb.WriteString("  " + lipgloss.NewStyle().Foreground(colorMuted).Render("No comments yet  •  press c to add one") + "\n")
-	} else {
-		for i, t := range threads {
-			if len(t.Comments) == 0 {
+		return lipgloss.NewStyle().Foreground(colorMuted).Render("  (no comments yet  •  press c to add one)")
+	}
+	var sb strings.Builder
+	for i, t := range threads {
+		if len(t.Comments) == 0 {
+			continue
+		}
+		root := t.Comments[0]
+		typeLabel := threadTypeLabel(t)
+		header := fmt.Sprintf("[%d] %s  •  %s  •  %s",
+			i+1,
+			lipgloss.NewStyle().Foreground(colorSecond).Bold(true).Render(typeLabel),
+			lipgloss.NewStyle().Foreground(colorFg).Render(root.Author.DisplayName),
+			lipgloss.NewStyle().Foreground(colorMuted).Render(formatTime(root.PublishedDate)),
+		)
+		sb.WriteString("  " + header + "\n")
+
+		body := strings.ReplaceAll(root.Content, "\n", " ")
+		if len(body) > 120 {
+			body = body[:117] + "..."
+		}
+		sb.WriteString("  " + lipgloss.NewStyle().Foreground(colorFg).Render("    "+body) + "\n")
+
+		for _, reply := range t.Comments[1:] {
+			if reply.IsDeleted || reply.CommentType == "system" {
 				continue
 			}
-			root := t.Comments[0]
-
-			// Thread type label
-			typeLabel := threadTypeLabel(t)
-			header := fmt.Sprintf("[%d] %s  •  %s  •  %s",
-				i+1,
-				lipgloss.NewStyle().Foreground(colorSecond).Bold(true).Render(typeLabel),
-				lipgloss.NewStyle().Foreground(colorFg).Render(root.Author.DisplayName),
-				lipgloss.NewStyle().Foreground(colorMuted).Render(formatTime(root.PublishedDate)),
+			replyBody := strings.ReplaceAll(reply.Content, "\n", " ")
+			if len(replyBody) > 100 {
+				replyBody = replyBody[:97] + "..."
+			}
+			replyLine := fmt.Sprintf("    ↳ %s  •  %s  •  %s",
+				lipgloss.NewStyle().Foreground(colorFg).Render(reply.Author.DisplayName),
+				lipgloss.NewStyle().Foreground(colorMuted).Render(formatTime(reply.PublishedDate)),
+				lipgloss.NewStyle().Foreground(colorMuted).Render(replyBody),
 			)
-			sb.WriteString("  " + header + "\n")
-
-			// Root comment body (first 120 chars, single line)
-			body := strings.ReplaceAll(root.Content, "\n", " ")
-			if len(body) > 120 {
-				body = body[:117] + "..."
-			}
-			sb.WriteString("  " + lipgloss.NewStyle().Foreground(colorFg).Render("    "+body) + "\n")
-
-			// Replies
-			for _, reply := range t.Comments[1:] {
-				if reply.IsDeleted || reply.CommentType == "system" {
-					continue
-				}
-				replyBody := strings.ReplaceAll(reply.Content, "\n", " ")
-				if len(replyBody) > 100 {
-					replyBody = replyBody[:97] + "..."
-				}
-				replyLine := fmt.Sprintf("    ↳ %s  •  %s  •  %s",
-					lipgloss.NewStyle().Foreground(colorFg).Render(reply.Author.DisplayName),
-					lipgloss.NewStyle().Foreground(colorMuted).Render(formatTime(reply.PublishedDate)),
-					lipgloss.NewStyle().Foreground(colorMuted).Render(replyBody),
-				)
-				sb.WriteString("  " + replyLine + "\n")
-			}
-			sb.WriteString("\n")
+			sb.WriteString("  " + replyLine + "\n")
 		}
+		sb.WriteString("\n")
 	}
-
 	return sb.String()
 }
 
@@ -341,11 +418,11 @@ func colorVoteLabel(vote int) string {
 	case 10:
 		return lipgloss.NewStyle().Foreground(colorGreen).Bold(true).Render("✓ Approved")
 	case 5:
-		return lipgloss.NewStyle().Foreground(colorGreen).Render("✓ Approved with suggestions")
+		return lipgloss.NewStyle().Foreground(colorGreen).Render("✓ w/ suggestions")
 	case 0:
 		return lipgloss.NewStyle().Foreground(colorMuted).Render("○ No vote")
 	case -5:
-		return lipgloss.NewStyle().Foreground(colorYellow).Render("⏳ Waiting for author")
+		return lipgloss.NewStyle().Foreground(colorYellow).Render("⏳ Waiting")
 	case -10:
 		return lipgloss.NewStyle().Foreground(colorRed).Bold(true).Render("✗ Rejected")
 	default:

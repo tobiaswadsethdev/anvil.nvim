@@ -12,62 +12,154 @@ import (
 	"github.com/tobiaswadsethdev/anvil.nvim/cmd/jira-anvil/ui/adf"
 )
 
-// DetailModel shows full issue details with optional PR tab.
+// Panel indices for the detail view.
+// Without PR: panels 0 (IssueInfo) and 1 (Description)
+// With PR:    panels 0 (IssueInfo), 1 (PR Overview), 2 (Description), 3 (PR Files)
+const (
+	panelIssueInfo    = 0
+	panelPROverview   = 1
+	panelDescription  = 2 // with PR
+	panelPRFiles      = 3 // with PR
+	panelDescNoPR     = 1 // without PR
+)
+
+// DetailModel shows full issue details with optional PR panels.
 type DetailModel struct {
-	issue    *api.Issue
-	viewport viewport.Model
-	prModel  PRDetailModel
-	tabIndex int  // 0 = Jira, 1 = Pull Request
-	hasPRTab bool // true when Azure DevOps is configured
-	width    int
-	height   int
+	issue        *api.Issue
+	prModel      PRDetailModel
+	hasPR        bool
+	focusedPanel int // 0-indexed panel number
+
+	// Description/Comments panel
+	descTabIndex int // 0=Description, 1=Comments
+	descViewport viewport.Model
+
+	width  int
+	height int
 }
 
-func NewDetailModel(issue *api.Issue, w, h int, hasPRTab bool) DetailModel {
-	vpHeight := jiraViewportHeight(h, hasPRTab)
-	vp := viewport.New(w, vpHeight)
-	vp.SetContent(renderIssueContent(issue, w))
+func NewDetailModel(issue *api.Issue, w, h int, hasPR bool) DetailModel {
 	m := DetailModel{
-		issue:    issue,
-		viewport: vp,
-		hasPRTab: hasPRTab,
-		width:    w,
-		height:   h,
+		issue: issue,
+		hasPR: hasPR,
+		width: w,
+		height: h,
 	}
-	if hasPRTab {
+	// Start focused on description panel (most content)
+	if hasPR {
+		m.focusedPanel = panelDescription
+	} else {
+		m.focusedPanel = panelDescNoPR
+	}
+
+	_, rightW := columnWidths(w)
+	_, rightTopH, _ := panelHeights(h, hasPR)
+	vpH := rightTopH - 2 - 2 // borders + title line + tab line
+	if vpH < 1 {
+		vpH = 1
+	}
+	m.descViewport = viewport.New(rightW-4, vpH)
+	m.descViewport.SetContent(renderDescContent(issue, rightW-4))
+
+	if hasPR {
 		m.prModel = NewPRDetailModel(w, h)
 	}
 	return m
 }
 
-func jiraViewportHeight(h int, hasPRTab bool) int {
-	if hasPRTab {
-		// title(1) + tabBar(1) + statusBar(1) + helpBar(1) + padding(3)
-		return h - 7
+// numPanels returns the total number of panels for this detail model.
+func (m DetailModel) numPanels() int {
+	if m.hasPR {
+		return 4
 	}
-	return h - 6
+	return 2
+}
+
+// descPanelIdx returns the panel index for the description panel.
+func (m DetailModel) descPanelIdx() int {
+	if m.hasPR {
+		return panelDescription
+	}
+	return panelDescNoPR
+}
+
+// prFilesPanelIdx returns the panel index for PR files (only valid when hasPR).
+func (m DetailModel) prFilesPanelIdx() int {
+	return panelPRFiles
+}
+
+func columnWidths(totalW int) (leftW, rightW int) {
+	leftW = totalW * 35 / 100
+	if leftW < 28 {
+		leftW = 28
+	}
+	rightW = totalW - leftW - 1
+	if rightW < 20 {
+		rightW = 20
+	}
+	return
+}
+
+// panelHeights returns (leftTopH, rightTopH, bottomH) for the two-column layout.
+// bottomH is the height for the bottom-left and bottom-right panels (when hasPR).
+func panelHeights(totalH int, hasPR bool) (leftTopH, rightTopH, bottomH int) {
+	usable := totalH - 1 // subtract help bar
+	if usable < 6 {
+		usable = 6
+	}
+	if !hasPR {
+		return usable, usable, 0
+	}
+	leftTopH = usable * 40 / 100
+	if leftTopH < 6 {
+		leftTopH = 6
+	}
+	rightTopH = usable * 50 / 100
+	if rightTopH < 6 {
+		rightTopH = 6
+	}
+	bottomH = usable - leftTopH
+	if bottomH < 6 {
+		bottomH = 6
+	}
+	return
 }
 
 func (m DetailModel) setSize(w, h int) DetailModel {
 	m.width = w
 	m.height = h
-	m.viewport.Width = w
-	m.viewport.Height = jiraViewportHeight(h, m.hasPRTab)
-	if m.issue != nil {
-		m.viewport.SetContent(renderIssueContent(m.issue, w))
+
+	_, rightW := columnWidths(w)
+	_, rightTopH, rightBotH := panelHeights(h, m.hasPR)
+
+	// Viewport for description panel: innerH = panelH - 2(borders) - 2(title+tabbar)
+	descVpH := rightTopH - 4
+	if !m.hasPR {
+		descVpH = rightTopH - 4
 	}
-	if m.hasPRTab {
-		m.prModel = m.prModel.setSize(w, h)
+	if descVpH < 1 {
+		descVpH = 1
+	}
+	m.descViewport.Width = rightW - 4
+	m.descViewport.Height = descVpH
+	if m.issue != nil {
+		m.descViewport.SetContent(renderDescContent(m.issue, rightW-4))
+	}
+
+	if m.hasPR {
+		m.prModel = m.prModel.setSize(w, h, rightBotH)
 	}
 	return m
 }
 
 func (m DetailModel) update(msg tea.Msg) (DetailModel, tea.Cmd) {
 	var cmd tea.Cmd
-	if m.tabIndex == 1 && m.hasPRTab {
-		m.prModel, cmd = m.prModel.update(msg)
-	} else {
-		m.viewport, cmd = m.viewport.Update(msg)
+	focused := m.focusedPanel
+
+	if focused == m.descPanelIdx() {
+		m.descViewport, cmd = m.descViewport.Update(msg)
+	} else if m.hasPR && focused == m.prFilesPanelIdx() {
+		m.prModel, cmd = m.prModel.updateFilesViewport(msg)
 	}
 	return m, cmd
 }
@@ -77,132 +169,73 @@ func (m DetailModel) view() string {
 		return "Loading..."
 	}
 
-	// Title bar
-	titleLine := titleStyle.Render(m.issue.Key) + " " +
-		lipgloss.NewStyle().Bold(true).Render(m.issue.Fields.Summary)
-	titleBar := lipgloss.NewStyle().
-		Width(m.width).
-		Background(lipgloss.Color("237")).
-		Padding(0, 1).
-		Render(TruncateString(titleLine, m.width-4))
-
-	// Tab bar (shown when Azure DevOps is configured)
-	var tabBar string
-	if m.hasPRTab {
-		tabBar = renderTabBar(m.tabIndex, m.width)
-	}
-
-	// Content viewport
-	var content string
-	if m.tabIndex == 1 && m.hasPRTab {
-		content = m.prModel.view()
-	} else {
-		content = m.viewport.View()
-	}
-
-	// Scroll percentage for active tab
-	var scrollPct int
-	if m.tabIndex == 1 && m.hasPRTab {
-		scrollPct = int(m.prModel.viewport.ScrollPercent() * 100)
-	} else {
-		scrollPct = int(m.viewport.ScrollPercent() * 100)
-	}
-	scrollInfo := fmt.Sprintf("%d%%", scrollPct)
-
-	// Status bar
-	statusBar := statusBarStyle.Width(m.width).Render(
-		fmt.Sprintf(" %s  %s  %s  %s",
-			ColorStatus(m.issue.Fields.Status.Name),
-			"•",
-			ColorPriority(m.issue.Fields.Priority.Name),
-			lipgloss.NewStyle().Foreground(colorMuted).Render(scrollInfo),
-		),
-	)
+	leftW, rightW := columnWidths(m.width)
+	leftTopH, rightTopH, bottomH := panelHeights(m.height, m.hasPR)
 
 	// Help bar
-	tabHint := ""
-	if m.hasPRTab {
-		tabHint = keyStyle.Render("[/]") + " tab  "
-	}
-	var actionHints string
-	if m.hasPRTab && m.tabIndex == 1 {
-		actionHints = keyStyle.Render("c") + " comment  " +
-			keyStyle.Render("v") + " vote  " +
-			keyStyle.Render("y") + " copy link  "
-	} else {
-		actionHints = keyStyle.Render("t") + " transition  " +
+	helpBar := helpStyle.Width(m.width).Render(
+		"  " + keyStyle.Render("Tab/S-Tab") + " panel  " +
+			keyStyle.Render("1-" + fmt.Sprintf("%d", m.numPanels())) + " jump  " +
+			keyStyle.Render("[/]") + " tab  " +
+			keyStyle.Render("↑/↓") + " scroll  " +
+			keyStyle.Render("t") + " transition  " +
 			keyStyle.Render("c") + " comment  " +
 			keyStyle.Render("a") + " assign  " +
-			keyStyle.Render("e") + " edit  "
-	}
-	helpBar := helpStyle.Width(m.width).Render(
-		"  " + tabHint +
-			keyStyle.Render("↑/↓") + " scroll  " +
-			actionHints +
+			keyStyle.Render("e") + " edit  " +
 			keyStyle.Render("o") + " browser  " +
 			keyStyle.Render("q") + " back",
 	)
 
-	parts := []string{titleBar}
-	if m.hasPRTab {
-		parts = append(parts, tabBar)
+	if !m.hasPR {
+		// 2-panel layout
+		issuePanel := m.renderIssueInfoPanel(leftW, leftTopH, m.focusedPanel == panelIssueInfo)
+		descPanel := m.renderDescriptionPanel(rightW, rightTopH, m.focusedPanel == panelDescNoPR)
+
+		row := lipgloss.JoinHorizontal(lipgloss.Top, issuePanel, " ", descPanel)
+		return lipgloss.JoinVertical(lipgloss.Left, row, helpBar)
 	}
-	parts = append(parts, content, statusBar, helpBar)
-	return strings.Join(parts, "\n")
+
+	// 4-panel layout
+	issuePanel := m.renderIssueInfoPanel(leftW, leftTopH, m.focusedPanel == panelIssueInfo)
+	prOverPanel := m.prModel.renderOverviewPanel(leftW, bottomH, m.focusedPanel == panelPROverview)
+
+	descPanel := m.renderDescriptionPanel(rightW, rightTopH, m.focusedPanel == panelDescription)
+	prFilesPanel := m.prModel.renderFilesPanel(rightW, bottomH, m.focusedPanel == panelPRFiles)
+
+	leftCol := lipgloss.JoinVertical(lipgloss.Left, issuePanel, prOverPanel)
+	rightCol := lipgloss.JoinVertical(lipgloss.Left, descPanel, prFilesPanel)
+	row := lipgloss.JoinHorizontal(lipgloss.Top, leftCol, " ", rightCol)
+	return lipgloss.JoinVertical(lipgloss.Left, row, helpBar)
 }
 
-// renderTabBar renders the tab navigation bar.
-func renderTabBar(activeTab, width int) string {
-	tabs := []string{"Jira", "Pull Request"}
-
-	activeTabStyle := lipgloss.NewStyle().
-		Background(colorSelected).
-		Foreground(colorFg).
-		Bold(true).
-		Padding(0, 2)
-
-	inactiveTabStyle := lipgloss.NewStyle().
-		Background(lipgloss.Color("237")).
-		Foreground(colorMuted).
-		Padding(0, 2)
-
-	var parts []string
-	for i, tab := range tabs {
-		if i == activeTab {
-			parts = append(parts, activeTabStyle.Render(tab))
-		} else {
-			parts = append(parts, inactiveTabStyle.Render(tab))
-		}
+func (m DetailModel) renderIssueInfoPanel(outerW, outerH int, active bool) string {
+	issue := m.issue
+	innerW := outerW - 4
+	if innerW < 1 {
+		innerW = 1
 	}
 
-	bar := strings.Join(parts, "")
-	barWidth := lipgloss.Width(bar)
-	if width > barWidth {
-		filler := lipgloss.NewStyle().
-			Background(lipgloss.Color("237")).
-			Render(strings.Repeat(" ", width-barWidth))
-		bar += filler
-	}
-	return bar
-}
-
-func renderIssueContent(issue *api.Issue, width int) string {
 	var sb strings.Builder
+	sb.WriteString(renderPanelTitle(1, "Issue Info", active) + "\n")
+	sb.WriteString(strings.Repeat("─", innerW) + "\n")
 
-	// Fields header
-	sb.WriteString(sectionStyle.Render("Details") + "\n")
+	// Issue key + summary as title
+	keySummary := titleStyle.Render(issue.Key) + " " +
+		lipgloss.NewStyle().Bold(true).Render(TruncateString(issue.Fields.Summary, innerW-len(issue.Key)-2))
+	sb.WriteString(TruncateString(lipgloss.NewStyle().Render(keySummary), innerW) + "\n\n")
+
 	writeField(&sb, "Status", ColorStatus(issue.Fields.Status.Name))
 	writeField(&sb, "Priority", ColorPriority(issue.Fields.Priority.Name))
 
 	assignee := "Unassigned"
 	if issue.Fields.Assignee != nil {
-		assignee = issue.Fields.Assignee.DisplayName
+		assignee = TruncateString(issue.Fields.Assignee.DisplayName, innerW-16)
 	}
 	writeField(&sb, "Assignee", assignee)
 
 	reporter := "—"
 	if issue.Fields.Reporter != nil {
-		reporter = issue.Fields.Reporter.DisplayName
+		reporter = TruncateString(issue.Fields.Reporter.DisplayName, innerW-16)
 	}
 	writeField(&sb, "Reporter", reporter)
 
@@ -214,27 +247,55 @@ func renderIssueContent(issue *api.Issue, width int) string {
 	}
 
 	if len(issue.Fields.Labels) > 0 {
-		writeField(&sb, "Labels", strings.Join(issue.Fields.Labels, ", "))
+		writeField(&sb, "Labels", TruncateString(strings.Join(issue.Fields.Labels, ", "), innerW-16))
 	}
 
-	// Custom ADF fields
-	if len(issue.Fields.Custom) > 0 {
-		sb.WriteString("\n")
-		sb.WriteString(sectionStyle.Render("Custom Fields") + "\n")
-		for name, raw := range issue.Fields.Custom {
-			text := strings.TrimSpace(adf.Render(raw))
-			if text != "" {
-				sb.WriteString("\n")
-				sb.WriteString(fieldLabelStyle.Render(name+":\n"))
-				sb.WriteString(indentText(text, 2))
-				sb.WriteString("\n")
-			}
-		}
+	style := panelInactiveStyle
+	if active {
+		style = panelActiveStyle
+	}
+	innerH := outerH - 2
+	if innerH < 1 {
+		innerH = 1
+	}
+	return style.Width(innerW).Height(innerH).Render(sb.String())
+}
+
+func (m DetailModel) renderDescriptionPanel(outerW, outerH int, active bool) string {
+	innerW := outerW - 4
+	innerH := outerH - 2
+	if innerW < 1 {
+		innerW = 1
+	}
+	if innerH < 1 {
+		innerH = 1
 	}
 
-	// Description
-	sb.WriteString("\n")
-	sb.WriteString(sectionStyle.Render("Description") + "\n\n")
+	tabs := []string{"Description", "Comments"}
+	title := renderPanelTitle(m.descPanelIdx()+1, "Description", active)
+	tabBar := renderPanelTabs(tabs, m.descTabIndex, innerW)
+	divider := strings.Repeat("─", innerW)
+
+	vpContent := m.descViewport.View()
+
+	content := lipgloss.JoinVertical(lipgloss.Left,
+		title,
+		tabBar,
+		divider,
+		vpContent,
+	)
+
+	style := panelInactiveStyle
+	if active {
+		style = panelActiveStyle
+	}
+	return style.Width(innerW).Height(innerH).Render(content)
+}
+
+// renderDescContent builds the viewport content for the given tab index.
+func renderDescContent(issue *api.Issue, width int) string {
+	var sb strings.Builder
+
 	if issue.Fields.Description != nil {
 		desc := strings.TrimSpace(adf.Render(issue.Fields.Description))
 		if desc != "" {
@@ -245,37 +306,50 @@ func renderIssueContent(issue *api.Issue, width int) string {
 	} else {
 		sb.WriteString(lipgloss.NewStyle().Foreground(colorMuted).Render("  (no description)"))
 	}
-	sb.WriteString("\n")
+	return sb.String()
+}
 
-	// Comments
-	if issue.Fields.Comment != nil && len(issue.Fields.Comment.Comments) > 0 {
-		sb.WriteString("\n")
-		sb.WriteString(sectionStyle.Render(
-			fmt.Sprintf("Comments (%d)", issue.Fields.Comment.Total),
-		) + "\n")
-
-		for _, comment := range issue.Fields.Comment.Comments {
-			sb.WriteString("\n")
-			author := "Unknown"
-			if comment.Author != nil {
-				author = comment.Author.DisplayName
-			}
-			meta := fmt.Sprintf("%s  ·  %s",
-				commentMetaStyle.Render(author),
-				commentMetaStyle.Render(formatTime(comment.Created.Time)),
-			)
-			sb.WriteString("  " + meta + "\n")
-
-			body := strings.TrimSpace(adf.Render(comment.Body))
-			if body != "" {
-				sb.WriteString(indentText(body, 2))
-			}
-			sb.WriteString("\n")
-			sb.WriteString(strings.Repeat("─", width-4) + "\n")
-		}
+// renderCommentsContent builds the viewport content for the comments tab.
+func renderCommentsContent(issue *api.Issue, width int) string {
+	if issue.Fields.Comment == nil || len(issue.Fields.Comment.Comments) == 0 {
+		return lipgloss.NewStyle().Foreground(colorMuted).Render("  (no comments)")
 	}
 
+	var sb strings.Builder
+	for _, comment := range issue.Fields.Comment.Comments {
+		author := "Unknown"
+		if comment.Author != nil {
+			author = comment.Author.DisplayName
+		}
+		meta := fmt.Sprintf("%s  ·  %s",
+			commentMetaStyle.Render(author),
+			commentMetaStyle.Render(formatTime(comment.Created.Time)),
+		)
+		sb.WriteString("  " + meta + "\n")
+
+		body := strings.TrimSpace(adf.Render(comment.Body))
+		if body != "" {
+			sb.WriteString(indentText(body, 2))
+		}
+		sb.WriteString("\n")
+		sb.WriteString(strings.Repeat("─", width-4) + "\n")
+	}
 	return sb.String()
+}
+
+// refreshDescViewport updates the viewport content based on current tab.
+func (m *DetailModel) refreshDescViewport() {
+	_, rightW := columnWidths(m.width)
+	innerW := rightW - 4
+	if innerW < 1 {
+		innerW = 1
+	}
+	if m.descTabIndex == 0 {
+		m.descViewport.SetContent(renderDescContent(m.issue, innerW))
+	} else {
+		m.descViewport.SetContent(renderCommentsContent(m.issue, innerW))
+	}
+	m.descViewport.GotoTop()
 }
 
 func writeField(sb *strings.Builder, label, value string) {

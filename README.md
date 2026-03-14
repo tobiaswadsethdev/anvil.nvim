@@ -6,15 +6,15 @@ A Jira Cloud TUI for Neovim. Browse issues, manage transitions, review pull requ
 
 - **JQL filter cycling** — define named filters and cycle through them with `[` / `]`
 - **Issue list** — table view with key, summary, status, priority, assignee, and age
-- **Issue detail** — scrollable view with ADF description rendering, comments, and custom fields
+- **Issue detail** — lazygit-style multi-panel view: Issue Info, Description/Comments, and (optionally) Pull Request panels
 - **Transitions** — change issue status via modal
 - **Comments** — add comments (Markdown → ADF)
 - **Assign** — fuzzy-search and assign users
 - **Edit** — edit description and ADF custom fields in `$EDITOR`
 - **Browser** — open any issue in the browser with `o`
-- **Azure DevOps PR tab** — linked pull request with git diff and pipeline status, shown as a tab alongside the Jira issue
-- **PR voting** — view reviewer votes and cast your own (Approve / Reject / etc.) directly from the PR tab
-- **PR comments** — view existing PR comment threads (general, file, and code comments) and add new ones or reply to threads
+- **Azure DevOps PR panels** — linked pull request displayed across two dedicated panels: PR overview (metadata, pipeline, reviewers) and PR Files (files list, diff, and comment threads)
+- **PR voting** — view reviewer votes and cast your own (Approve / Reject / etc.) via `v`
+- **PR comments** — view existing PR comment threads and add new ones or reply to threads via `c`
 
 ## Requirements
 
@@ -156,23 +156,36 @@ When `position = "float"`, setting `rounded = true` draws a rounded border aroun
 
 ### Issue Detail
 
-| Key         | Action                           |
-|-------------|----------------------------------|
-| `[`         | Previous tab (Jira / PR)         |
-| `]`         | Next tab (Jira / PR)             |
-| `↑` / `k`   | Scroll up                        |
-| `↓` / `j`   | Scroll down                      |
-| `t`         | Transition status                |
-| `c`         | Add Jira comment *(Jira tab)* / Add PR comment *(PR tab)* |
-| `a`         | Assign issue                     |
-| `e`         | Edit in `$EDITOR`                |
-| `v`         | Vote on PR *(PR tab only)*       |
-| `o`         | Open in browser                  |
-| `r`         | Reload                           |
-| `?`         | Show help                        |
-| `q` / `Esc` | Back to list                     |
+The detail view uses a **lazygit-style multi-panel layout**. Without Azure DevOps configured there are 2 panels; with it there are 4:
 
-## Azure DevOps PR Tab
+| Panel | Label | Contents |
+|-------|-------|----------|
+| `[1]` | Issue Info | Key, status, priority, assignee, reporter, dates, labels |
+| `[2]` | Pull Request | PR status, branches, pipeline, reviewers *(AzDO only)* |
+| `[3]` | Description | Issue description and comments (tabs: `Description` \| `Comments`) |
+| `[4]` | PR Files | Changed files, diff, and PR threads (tabs: `Files` \| `Diff` \| `Comments`) *(AzDO only)* |
+
+| Key             | Action                                            |
+|-----------------|---------------------------------------------------|
+| `Tab`           | Focus next panel                                  |
+| `Shift+Tab`     | Focus previous panel                              |
+| `1` – `4`       | Jump directly to panel by number                  |
+| `[`             | Previous tab within focused panel                 |
+| `]`             | Next tab within focused panel                     |
+| `↑` / `k`       | Scroll up in focused panel                        |
+| `↓` / `j`       | Scroll down in focused panel                      |
+| `t`             | Transition status                                 |
+| `c`             | Add Jira comment / Add PR comment *(PR panels)*   |
+| `a`             | Assign issue                                      |
+| `e`             | Edit in `$EDITOR`                                 |
+| `v`             | Vote on PR *(requires AzDO)*                      |
+| `y`             | Copy PR link to clipboard *(requires AzDO)*       |
+| `o`             | Open in browser                                   |
+| `r`             | Reload                                            |
+| `?`             | Show help                                         |
+| `q` / `Esc`     | Back to list                                      |
+
+## Azure DevOps PR Panels
 
 When Azure DevOps is configured, opening any issue detail automatically fetches the linked pull request. The PR is found by searching for a branch whose name contains the Jira issue key — `feature/CODE-123`, `fix/CODE-123`, and `docs/CODE-123` all resolve to `CODE-123` regardless of your current local branch.
 
@@ -188,24 +201,27 @@ Create your PAT at `https://dev.azure.com/<org>/_usersSettings/tokens` with at m
 | Code  | Write      | Voting on PRs and adding comments         |
 | Build | Read       | Displaying pipeline build status          |
 
-The **Pull Request** tab shows:
+PR data is displayed across two dedicated panels in the detail view:
 
-- PR title, status (Active / Completed / Abandoned), author, and source → target branches
+**Panel `[2]` — Pull Request** (left column, compact overview):
+- PR status (Active / Completed / Abandoned), author, and source → target branches
 - **Pipeline status** — latest Azure Pipelines run: `●` In Progress / `✓` Succeeded / `✗` Failed / `○` Cancelled
 - **Reviewer votes** with color indicators:
   - `✓` green — Approved / Approved with suggestions
   - `✗` red — Rejected
   - `⏳` yellow — Waiting for author
   - `○` gray — No vote
-- **Changed files** list with change type indicators (A / M / D / R)
-- **Unified diff** with colored `+`/`-` lines and `@@` hunk headers
-- **Comments** — all PR comment threads, numbered `[1]`, `[2]`, ... with author, timestamp, and replies
 
-Switch between **Jira** and **Pull Request** tabs with `[` and `]`.
+**Panel `[4]` — PR Files** (right column, scrollable, 3 tabs):
+- **Files tab** — changed files list with change type indicators (A / M / D / R)
+- **Diff tab** — unified diff with colored `+`/`-` lines and `@@` hunk headers
+- **Comments tab** — PR comment threads numbered `[1]`, `[2]`, ... with author, timestamp, and replies
+
+Navigate to a panel with its number key or `Tab`/`Shift+Tab`. Switch between the tabs within panel `[4]` with `[` and `]`.
 
 ### Voting
 
-Press `v` on the Pull Request tab to open the voting modal:
+Press `v` (from any panel) to open the voting modal:
 
 | Option                    | Vote              |
 |---------------------------|-------------------|
@@ -219,7 +235,7 @@ Navigate with `j` / `k`, select with `Enter` or a number key, cancel with `Esc`.
 
 ### PR Comments
 
-Press `c` on the Pull Request tab to open the PR comment modal. It guides you through a multi-step flow:
+Press `c` while focused on a PR panel (`[2]` or `[4]`) to open the PR comment modal. It guides you through a multi-step flow:
 
 **Step 1 — Choose comment type:**
 

@@ -28,16 +28,16 @@ required.
 
 Features:
   • Browse issues via named JQL filters (cycle with [ / ])
-  • Issue detail view with ADF description rendering
+  • Issue detail view — lazygit-style multi-panel layout with bordered boxes
   • Transition issue status
   • Add comments (Markdown → ADF)
   • Assign issues to team members
   • Edit description and ADF custom fields in $EDITOR
   • Open issues in browser
-  • Azure DevOps PR tab — linked pull request with diff and pipeline status
-  • PR voting — cast Approve / Reject / etc. directly from the PR tab
-  • PR comments — view, add, and reply to PR comment threads (general, file,
-    and code comments)
+  • Azure DevOps PR panels — PR overview (metadata, pipeline, reviewers) and
+    PR Files (files, diff, comments) as dedicated panels in the detail view
+  • PR voting — cast Approve / Reject / etc. via v
+  • PR comments — view, add, and reply to PR comment threads
   • Flexible window layouts: floating, right split, or bottom split
 
 ==============================================================================
@@ -198,15 +198,33 @@ Issue List view:~
   q / Ctrl+C  Quit
 
 Issue Detail view:~
-  [           Previous tab (Jira / Pull Request)
-  ]           Next tab (Jira / Pull Request)
+The detail view uses a lazygit-style multi-panel layout. Without Azure DevOps
+configured there are 2 panels; with it there are 4:
+
+  [1]  Issue Info     — key, status, priority, assignee, reporter, dates
+  [2]  Pull Request   — PR status, branches, pipeline, reviewers (AzDO only)
+  [3]  Description    — description + comments (tabs: Description | Comments)
+  [4]  PR Files       — files, diff, PR threads (tabs: Files | Diff | Comments)
+                        (AzDO only)
+
+Panel navigation:
+  Tab         Focus next panel
+  Shift+Tab   Focus previous panel
+  1 - 4       Jump to panel by number
+
+Within a focused panel:
+  [           Previous tab (for panels with tabs)
+  ]           Next tab (for panels with tabs)
   ↑ / k       Scroll up
   ↓ / j       Scroll down
+
+Actions (available from any panel):
   t           Transition status
-  c           Add Jira comment (Jira tab) / Add PR comment (PR tab)
+  c           Add Jira comment / Add PR comment (when PR panel focused)
   a           Assign issue
   e           Edit description / ADF fields in $EDITOR
-  v           Vote on PR (PR tab only — see |anvil-azdo|)
+  v           Vote on PR (requires AzDO — see |anvil-azdo|)
+  y           Copy PR link to clipboard (requires AzDO)
   o           Open in browser
   r           Reload issue
   ?           Show help
@@ -288,23 +306,27 @@ Create your PAT at https://dev.azure.com/<org>/_usersSettings/tokens with:
   Code    Write       Voting on PRs and adding comments
   Build   Read        Displaying pipeline build status
 
-The Pull Request tab displays:
-  • PR title, status (Active / Completed / Abandoned), author, branches
-  • Pipeline status: ● In Progress / ✓ Succeeded / ✗ Failed / ○ Cancelled
+PR data is displayed across two dedicated panels in the detail view:
+
+Panel [2] — Pull Request (left column, compact overview):
+  • PR status (Active / Completed / Abandoned), author, source → target branches
+  • Pipeline: ● In Progress / ✓ Succeeded / ✗ Failed / ○ Cancelled
   • Reviewer votes:
       ✓ green   — Approved / Approved with suggestions
       ✗ red     — Rejected
       ⏳ yellow — Waiting for author
       ○ gray    — No vote
-  • Changed files with type indicators (A added / M modified / D deleted /
-    R renamed)
-  • Unified diff rendered with colored +/- lines and @@ hunk headers
-  • Comments — numbered threads [1] [2] ... with author, timestamp, replies
 
-Switch between the Jira and Pull Request tabs with [ and ].
+Panel [4] — PR Files (right column, scrollable with 3 tabs):
+  Files tab    — changed files list (A added / M modified / D deleted / R renamed)
+  Diff tab     — unified diff with colored +/- lines and @@ hunk headers
+  Comments tab — PR comment threads [1] [2] ... with author, timestamp, replies
+
+Navigate to a panel with its number key or Tab/Shift+Tab. Switch tabs within
+panel [4] with [ and ].
 
 Voting on a pull request:~
-Press `v` on the Pull Request tab to open the Vote modal. Available options:
+Press `v` (from any panel) to open the Vote modal. Available options:
 
   Approve                   — ✓ Approved
   Approve with suggestions  — ✓ Approved with suggestions
@@ -315,8 +337,8 @@ Press `v` on the Pull Request tab to open the Vote modal. Available options:
 The reviewer list refreshes automatically after a vote is cast.
 
 PR comments:~
-Press `c` on the Pull Request tab to open the PR comment modal. The modal
-walks through multiple steps:
+Press `c` while focused on a PR panel ([2] or [4]) to open the PR comment
+modal. The modal walks through multiple steps:
 
   Step 1: Choose comment type
     1  General comment  — top-level PR comment, no file context
@@ -331,7 +353,7 @@ walks through multiple steps:
 
   Final step: write your comment. Press Ctrl+S to submit.
 
-Comment threads are displayed in the PR tab viewport, numbered [1] [2] ...
+Comment threads are displayed in the PR Files panel Comments tab, numbered [1] [2] ...
 Each thread shows its type (General / File: <path> / Code: <path>:<line>),
 the author and timestamp of the root comment, the comment body, and any
 replies indented with ↳. The thread list refreshes automatically after

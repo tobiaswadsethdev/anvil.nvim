@@ -115,10 +115,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case issueFetchedMsg:
-		hasPRTab := m.azdoClient != nil
-		m.detail = NewDetailModel(msg.issue, m.width, m.height, hasPRTab)
+		hasPR := m.azdoClient != nil
+		m.detail = NewDetailModel(msg.issue, m.width, m.height, hasPR)
 		m.state = StateDetail
-		if hasPRTab {
+		if hasPR {
 			return m, fetchPRCmd(m.azdoClient, msg.issue.Key)
 		}
 		return m, nil
@@ -301,33 +301,64 @@ func (m Model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	n := m.detail.numPanels()
+
 	switch msg.String() {
 	case "q", "esc":
 		m.state = StateList
 		return m, nil
-	case "]":
-		if m.detail.hasPRTab {
-			m.detail.tabIndex = (m.detail.tabIndex + 1) % 2
+
+	// Panel navigation
+	case "tab":
+		m.detail.focusedPanel = (m.detail.focusedPanel + 1) % n
+		return m, nil
+	case "shift+tab":
+		m.detail.focusedPanel = (m.detail.focusedPanel - 1 + n) % n
+		return m, nil
+	case "1":
+		m.detail.focusedPanel = 0
+		return m, nil
+	case "2":
+		if n >= 2 {
+			m.detail.focusedPanel = 1
 		}
+		return m, nil
+	case "3":
+		if n >= 3 {
+			m.detail.focusedPanel = 2
+		}
+		return m, nil
+	case "4":
+		if n >= 4 {
+			m.detail.focusedPanel = 3
+		}
+		return m, nil
+
+	// Tab switching within focused panel
+	case "]":
+		m.detail = m.detailNextTab(1)
 		return m, nil
 	case "[":
-		if m.detail.hasPRTab {
-			m.detail.tabIndex = (m.detail.tabIndex - 1 + 2) % 2
-		}
+		m.detail = m.detailNextTab(-1)
 		return m, nil
+
 	case "r":
 		return m.reloadDetail()
 	case "o":
 		openBrowser(m.cfg.Jira.URL + "/browse/" + m.detail.issue.Key)
 		return m, nil
+
+	// Jira actions (always available)
 	case "t":
-		if m.detail.tabIndex == 0 {
-			return m, loadTransitionsCmd(m.client, m.detail.issue.Key)
-		}
-		return m, nil
+		return m, loadTransitionsCmd(m.client, m.detail.issue.Key)
+	case "a":
+		return m, loadAssignableUsersCmd(m.client, m.detail.issue.Key)
+	case "e":
+		return m, startEditCmd(m.detail.issue, m.client)
 	case "c":
-		// PR tab: open PR comment modal; Jira tab: open Jira comment modal
-		if m.detail.hasPRTab && m.detail.tabIndex == 1 && m.detail.prModel.pr != nil {
+		// If PR panel is focused and PR data is loaded, open PR comment modal
+		if m.detail.hasPR && m.detail.prModel.pr != nil &&
+			(m.detail.focusedPanel == panelPROverview || m.detail.focusedPanel == panelPRFiles) {
 			filePaths := make([]string, 0, len(m.detail.prModel.fileDiffs))
 			for _, fd := range m.detail.prModel.fileDiffs {
 				filePaths = append(filePaths, fd.Path)
@@ -339,25 +370,17 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.comment = NewCommentModel(m.detail.issue.Key)
 		m.state = StateComment
 		return m, m.comment.Init()
-	case "a":
-		if m.detail.tabIndex == 0 {
-			return m, loadAssignableUsersCmd(m.client, m.detail.issue.Key)
-		}
-		return m, nil
-	case "e":
-		if m.detail.tabIndex == 0 {
-			return m, startEditCmd(m.detail.issue, m.client)
-		}
-		return m, nil
+
+	// PR-only actions
 	case "v":
-		if m.detail.hasPRTab && m.detail.tabIndex == 1 && m.detail.prModel.pr != nil {
+		if m.detail.hasPR && m.detail.prModel.pr != nil {
 			m.vote = NewVoteModel(m.detail.prModel.pr)
 			m.state = StateVote
 			return m, nil
 		}
 		return m, nil
 	case "y":
-		if m.detail.hasPRTab && m.detail.tabIndex == 1 && m.detail.prModel.pr != nil {
+		if m.detail.hasPR && m.detail.prModel.pr != nil {
 			url := m.azdoClient.PRWebURL(m.detail.prModel.pr)
 			if copyToClipboard(url) {
 				m.statusMsg = "PR link copied to clipboard"
@@ -366,15 +389,34 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
+
 	case "?":
 		m.statusMsg = detailHelp
 		return m, nil
 	}
 
-	// Pass to viewport for scrolling
+	// Pass scroll keys to the focused panel's viewport
 	var cmd tea.Cmd
 	m.detail, cmd = m.detail.update(msg)
 	return m, cmd
+}
+
+// detailNextTab advances (or reverses) the tab within the currently focused panel.
+func (m Model) detailNextTab(dir int) DetailModel {
+	d := m.detail
+	switch d.focusedPanel {
+	case d.descPanelIdx():
+		tabs := 2 // Description | Comments
+		d.descTabIndex = (d.descTabIndex + dir + tabs) % tabs
+		d.refreshDescViewport()
+	case panelPRFiles:
+		if d.hasPR {
+			tabs := 3 // Files | Diff | Comments
+			d.prModel.filesTabIndex = (d.prModel.filesTabIndex + dir + tabs) % tabs
+			d.prModel.refreshFilesViewport()
+		}
+	}
+	return d
 }
 
 func (m Model) handleTransitionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -566,4 +608,4 @@ func (m Model) renderOverlay(base, modal string) string {
 
 // Help strings
 const listHelp = "↑/↓: navigate  Enter: open  [/]: cycle filter  r: refresh  n: new issue  o: browser  q: quit"
-const detailHelp = "↑/↓: scroll  [/]: tab  t: transition  c: comment/PR comment  a: assign  e: edit  v: vote (PR tab)  y: copy PR link (PR tab)  o: browser  q: back"
+const detailHelp = "Tab/S-Tab: panel  1-4: jump  [/]: tab  ↑/↓: scroll  t: transition  c: comment  a: assign  e: edit  v: vote (PR)  y: copy PR link  o: browser  q: back"
