@@ -1,6 +1,11 @@
 package ui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"fmt"
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+)
 
 var (
 	// Base colors
@@ -93,6 +98,34 @@ var (
 	keyStyle = lipgloss.NewStyle().
 			Foreground(colorSecond).
 			Bold(true)
+
+	// Panel styles (lazygit-style bordered boxes)
+	panelActiveStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(colorAccent).
+				Padding(0, 1)
+
+	panelInactiveStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(colorMuted).
+				Padding(0, 1)
+
+	panelTitleActiveStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(colorAccent)
+
+	panelTitleInactiveStyle = lipgloss.NewStyle().
+				Foreground(colorMuted)
+
+	panelTabActiveStyle = lipgloss.NewStyle().
+				Background(colorSelected).
+				Foreground(colorFg).
+				Bold(true).
+				Padding(0, 1)
+
+	panelTabInactiveStyle = lipgloss.NewStyle().
+				Foreground(colorMuted).
+				Padding(0, 1)
 )
 
 // ColorStatus returns a styled status string.
@@ -123,6 +156,52 @@ func ColorPriority(priority string) string {
 	default:
 		return priority
 	}
+}
+
+// renderPanelTitle renders a "[N]-Title" header line for a panel.
+func renderPanelTitle(num int, title string, active bool) string {
+	label := fmt.Sprintf("[%d]-%s", num, title)
+	if active {
+		return panelTitleActiveStyle.Render(label)
+	}
+	return panelTitleInactiveStyle.Render(label)
+}
+
+// renderPanelTabs renders a tab bar for panels that have multiple tabs.
+func renderPanelTabs(tabs []string, activeTab int, width int) string {
+	var parts []string
+	for i, tab := range tabs {
+		if i == activeTab {
+			parts = append(parts, panelTabActiveStyle.Render(tab))
+		} else {
+			parts = append(parts, panelTabInactiveStyle.Render(tab))
+		}
+	}
+	bar := lipgloss.JoinHorizontal(lipgloss.Top, parts...)
+	barW := lipgloss.Width(bar)
+	if width > barW {
+		filler := lipgloss.NewStyle().Render(strings.Repeat(" ", width-barW))
+		bar += filler
+	}
+	return bar
+}
+
+// wrapPanel wraps content in an active or inactive bordered panel of the given outer width/height.
+func wrapPanel(content string, active bool, outerW, outerH int) string {
+	style := panelInactiveStyle
+	if active {
+		style = panelActiveStyle
+	}
+	// Inner dimensions: subtract 2 for borders + 2 for padding on each side horizontally, 2 for borders vertically
+	innerW := outerW - 4
+	innerH := outerH - 2
+	if innerW < 1 {
+		innerW = 1
+	}
+	if innerH < 1 {
+		innerH = 1
+	}
+	return style.Width(innerW).Height(innerH).Render(content)
 }
 
 // TruncateString truncates a string to maxLen, adding ellipsis if needed.
