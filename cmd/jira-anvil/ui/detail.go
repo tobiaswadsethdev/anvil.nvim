@@ -270,8 +270,14 @@ func (m DetailModel) view() string {
 		h := maxInt(2, m.height-1)
 		issuePanel := m.renderIssueInfoPanel(leftW, h, m.focusedPanel == panelIssueInfo)
 		descPanel := m.renderNoPRDescriptionPanel(rightW, h, m.focusedPanel == panelDescNoPR)
-		row := lipgloss.JoinHorizontal(lipgloss.Top, issuePanel, " ", descPanel)
-		row = lipgloss.NewStyle().Width(m.width).Render(row)
+
+		leftLines := normalizeBlock(issuePanel, leftW, h)
+		rightLines := normalizeBlock(descPanel, rightW, h)
+		rowLines := make([]string, h)
+		for i := 0; i < h; i++ {
+			rowLines[i] = leftLines[i] + " " + rightLines[i]
+		}
+		row := strings.Join(rowLines, "\n")
 		return lipgloss.JoinVertical(lipgloss.Left, row, helpBar)
 	}
 
@@ -284,8 +290,14 @@ func (m DetailModel) view() string {
 	centerPanel := m.renderCenterPanel(l.centerW, l.colH, m.focusedPanel == panelCenter)
 	rightPanel := m.renderRightPanel(l.rightW, l.colH, m.focusedPanel == panelRight)
 
-	row := lipgloss.JoinHorizontal(lipgloss.Top, leftCol, " ", centerPanel, " ", rightPanel)
-	row = lipgloss.NewStyle().Width(m.width).Render(row)
+	leftColLines := normalizeBlock(leftCol, l.leftW, l.colH)
+	centerLines := normalizeBlock(centerPanel, l.centerW, l.colH)
+	rightLines := normalizeBlock(rightPanel, l.rightW, l.colH)
+	rowLines := make([]string, l.colH)
+	for i := 0; i < l.colH; i++ {
+		rowLines[i] = leftColLines[i] + " " + centerLines[i] + " " + rightLines[i]
+	}
+	row := strings.Join(rowLines, "\n")
 	return lipgloss.JoinVertical(lipgloss.Left, row, helpBar)
 }
 
@@ -712,4 +724,36 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func normalizeBlock(block string, width, height int) []string {
+	if width < 1 {
+		width = 1
+	}
+	if height < 1 {
+		height = 1
+	}
+
+	raw := strings.Split(block, "\n")
+	for len(raw) > 0 && raw[len(raw)-1] == "" {
+		raw = raw[:len(raw)-1]
+	}
+
+	lines := make([]string, height)
+	for i := 0; i < height; i++ {
+		if i < len(raw) {
+			lines[i] = padToWidth(raw[i], width)
+		} else {
+			lines[i] = strings.Repeat(" ", width)
+		}
+	}
+	return lines
+}
+
+func padToWidth(s string, width int) string {
+	w := lipgloss.Width(s)
+	if w >= width {
+		return s
+	}
+	return s + strings.Repeat(" ", width-w)
 }
