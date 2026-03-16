@@ -130,6 +130,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.detail.prModel = m.detail.prModel.setData(msg.pr, msg.build, msg.fileDiffs, msg.reviewers, msg.threads)
 		}
 		if m.detail.hasPR {
+			m.detail.refreshPRInfoViewport()
 			m.detail.refreshCenterViewport()
 			m.detail.refreshRightViewport()
 		}
@@ -139,6 +140,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err == nil {
 			m.detail.prModel = m.detail.prModel.setThreads(msg.threads)
 			if m.detail.hasPR {
+				m.detail.refreshPRInfoViewport()
 				m.detail.refreshRightViewport()
 			}
 		}
@@ -154,6 +156,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case reviewersRefreshedMsg:
 		m.detail.prModel = m.detail.prModel.setReviewers(msg.reviewers)
+		if m.detail.hasPR {
+			m.detail.refreshPRInfoViewport()
+		}
 		m.statusMsg = "Vote submitted"
 		m.state = StateDetail
 		return m, nil

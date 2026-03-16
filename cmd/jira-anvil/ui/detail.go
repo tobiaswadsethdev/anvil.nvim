@@ -22,10 +22,12 @@ const (
 )
 
 type DetailModel struct {
-	issue        *api.Issue
-	prModel      PRDetailModel
-	hasPR        bool
-	focusedPanel int
+	issue          *api.Issue
+	prModel        PRDetailModel
+	hasPR          bool
+	focusedPanel   int
+	issueViewport  viewport.Model
+	prInfoViewport viewport.Model
 
 	// No-PR mode (2 panels)
 	descTabIndex int
@@ -197,18 +199,32 @@ func (m DetailModel) setSize(w, h int) DetailModel {
 	m.height = h
 
 	if !m.hasPR {
-		_, rightW := noPRColumnWidths(w)
+		leftW, rightW := noPRColumnWidths(w)
+		leftH := maxInt(2, h-1)
+		issueVpH := maxInt(1, leftH-5)
+		m.issueViewport.Width = maxInt(1, leftW-4)
+		m.issueViewport.Height = issueVpH
+
 		rightH := maxInt(2, h-1)
 		descVpH := maxInt(1, rightH-5) // innerH-3(title/tab/divider)
 		m.descViewport.Width = maxInt(1, rightW-4)
 		m.descViewport.Height = descVpH
 		if m.issue != nil {
+			m.refreshIssueViewport()
 			m.refreshNoPRDescViewport()
 		}
 		return m
 	}
 
 	l := layoutForPR(w, h)
+	issueVpH := maxInt(1, l.leftTopH-5)
+	m.issueViewport.Width = maxInt(1, l.leftW-4)
+	m.issueViewport.Height = issueVpH
+
+	prInfoVpH := maxInt(1, l.leftBottomH-5)
+	m.prInfoViewport.Width = maxInt(1, l.leftW-4)
+	m.prInfoViewport.Height = prInfoVpH
+
 	centerInnerW := maxInt(1, l.centerW-4)
 	centerVpH := maxInt(1, l.colH-5)
 	m.centerViewport.Width = centerInnerW
@@ -220,6 +236,8 @@ func (m DetailModel) setSize(w, h int) DetailModel {
 	m.rightViewport.Height = rightVpH
 
 	if m.issue != nil {
+		m.refreshIssueViewport()
+		m.refreshPRInfoViewport()
 		m.refreshCenterViewport()
 		m.refreshRightViewport()
 	}
@@ -232,6 +250,10 @@ func (m DetailModel) setSize(w, h int) DetailModel {
 func (m DetailModel) update(msg tea.Msg) (DetailModel, tea.Cmd) {
 	var cmd tea.Cmd
 	if !m.hasPR {
+		if m.focusedPanel == panelIssueInfo {
+			m.issueViewport, cmd = m.issueViewport.Update(msg)
+			return m, cmd
+		}
 		if m.focusedPanel == panelDescNoPR {
 			m.descViewport, cmd = m.descViewport.Update(msg)
 		}
@@ -239,6 +261,10 @@ func (m DetailModel) update(msg tea.Msg) (DetailModel, tea.Cmd) {
 	}
 
 	switch m.focusedPanel {
+	case panelIssueInfo:
+		m.issueViewport, cmd = m.issueViewport.Update(msg)
+	case panelPRInfo:
+		m.prInfoViewport, cmd = m.prInfoViewport.Update(msg)
 	case panelCenter:
 		m.centerViewport, cmd = m.centerViewport.Update(msg)
 	case panelRight:
@@ -284,7 +310,7 @@ func (m DetailModel) view() string {
 	l := layoutForPR(m.width, m.height)
 
 	issuePanel := m.renderIssueInfoPanel(l.leftW, l.leftTopH, m.focusedPanel == panelIssueInfo)
-	prPanel := m.prModel.renderOverviewPanel(l.leftW, l.leftBottomH, m.focusedPanel == panelPRInfo)
+	prPanel := m.renderPRInfoPanel(l.leftW, l.leftBottomH, m.focusedPanel == panelPRInfo)
 	leftCol := lipgloss.JoinVertical(lipgloss.Left, issuePanel, prPanel)
 
 	centerPanel := m.renderCenterPanel(l.centerW, l.colH, m.focusedPanel == panelCenter)
@@ -302,12 +328,23 @@ func (m DetailModel) view() string {
 }
 
 func (m DetailModel) renderIssueInfoPanel(outerW, outerH int, active bool) string {
-	issue := m.issue
 	innerW := maxInt(1, outerW-4)
 
 	var sb strings.Builder
 	sb.WriteString(renderPanelTitle(1, "Issue Info", active) + "\n")
 	sb.WriteString(strings.Repeat("─", innerW) + "\n")
+	sb.WriteString(m.issueViewport.View())
+
+	style := panelInactiveStyle
+	if active {
+		style = panelActiveStyle
+	}
+	innerH := maxInt(1, outerH-2)
+	return style.Width(innerW).Height(innerH).Render(sb.String())
+}
+
+func renderIssueInfoContent(issue *api.Issue, innerW int) string {
+	var sb strings.Builder
 
 	keySummary := titleStyle.Render(issue.Key) + " " +
 		lipgloss.NewStyle().Bold(true).Render(TruncateString(issue.Fields.Summary, innerW-len(issue.Key)-2))
@@ -338,12 +375,22 @@ func (m DetailModel) renderIssueInfoPanel(outerW, outerH int, active bool) strin
 	if len(issue.Fields.Labels) > 0 {
 		writeField(&sb, "Labels", TruncateString(strings.Join(issue.Fields.Labels, ", "), innerW-16))
 	}
+	return sb.String()
+}
+
+func (m DetailModel) renderPRInfoPanel(outerW, outerH int, active bool) string {
+	innerW := maxInt(1, outerW-4)
+	innerH := maxInt(1, outerH-2)
+
+	var sb strings.Builder
+	sb.WriteString(renderPanelTitle(2, "Pull Request", active) + "\n")
+	sb.WriteString(strings.Repeat("─", innerW) + "\n")
+	sb.WriteString(m.prInfoViewport.View())
 
 	style := panelInactiveStyle
 	if active {
 		style = panelActiveStyle
 	}
-	innerH := maxInt(1, outerH-2)
 	return style.Width(innerW).Height(innerH).Render(sb.String())
 }
 
@@ -558,6 +605,18 @@ func (m *DetailModel) refreshNoPRDescViewport() {
 		m.descViewport.SetContent(renderCommentsContent(m.issue, innerW))
 	}
 	m.descViewport.GotoTop()
+}
+
+func (m *DetailModel) refreshIssueViewport() {
+	innerW := maxInt(1, m.issueViewport.Width)
+	m.issueViewport.SetContent(renderIssueInfoContent(m.issue, innerW))
+	m.issueViewport.GotoTop()
+}
+
+func (m *DetailModel) refreshPRInfoViewport() {
+	innerW := maxInt(1, m.prInfoViewport.Width)
+	m.prInfoViewport.SetContent(m.prModel.renderOverviewContent(innerW))
+	m.prInfoViewport.GotoTop()
 }
 
 func (m *DetailModel) refreshCenterViewport() {

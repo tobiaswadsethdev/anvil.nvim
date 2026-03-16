@@ -123,54 +123,62 @@ func (m PRDetailModel) renderOverviewPanel(outerW, outerH int, active bool) stri
 	var sb strings.Builder
 	sb.WriteString(renderPanelTitle(2, "Pull Request", active) + "\n")
 	sb.WriteString(strings.Repeat("─", innerW) + "\n")
-
-	if m.loading {
-		sb.WriteString(lipgloss.NewStyle().Foreground(colorMuted).Render("Loading..."))
-	} else if m.err != nil {
-		sb.WriteString(lipgloss.NewStyle().Foreground(colorRed).Render("Error: " + TruncateString(m.err.Error(), innerW-8)))
-	} else if m.notFound || m.pr == nil {
-		sb.WriteString(lipgloss.NewStyle().Foreground(colorMuted).
-			Render("No linked PR found.\n\nBranch must contain\nthe Jira issue key."))
-	} else {
-		pr := m.pr
-		sourceBranch := strings.TrimPrefix(pr.SourceRefName, "refs/heads/")
-		targetBranch := strings.TrimPrefix(pr.TargetRefName, "refs/heads/")
-
-		sb.WriteString(fieldLabelStyle.Render("Status:") + " " + colorPRStatus(pr.Status) + "\n")
-		sb.WriteString(fieldLabelStyle.Render("Author:") + " " +
-			fieldValueStyle.Render(TruncateString(pr.CreatedBy.DisplayName, innerW-16)) + "\n")
-		sb.WriteString(fieldLabelStyle.Render("Branch:") + " " +
-			fieldValueStyle.Render(TruncateString(sourceBranch+" → "+targetBranch, innerW-16)) + "\n")
-
-		// Pipeline
-		sb.WriteString("\n")
-		if m.build == nil {
-			sb.WriteString(lipgloss.NewStyle().Foreground(colorMuted).Render("Pipeline: none") + "\n")
-		} else {
-			sb.WriteString(fieldLabelStyle.Render("Pipeline:") + " " + colorBuildStatus(m.build.Status, m.build.Result) + "\n")
-		}
-
-		// Reviewers
-		sb.WriteString("\n")
-		sb.WriteString(sectionStyle.Render("Reviewers") + "\n")
-		if len(m.reviewers) == 0 {
-			sb.WriteString("  " + lipgloss.NewStyle().Foreground(colorMuted).Render("None assigned") + "\n")
-		} else {
-			for _, r := range m.reviewers {
-				line := fmt.Sprintf("  %-20s %s",
-					TruncateString(r.DisplayName, 20),
-					colorVoteLabel(r.Vote),
-				)
-				sb.WriteString(TruncateString(line, innerW) + "\n")
-			}
-		}
-	}
+	sb.WriteString(m.renderOverviewContent(innerW))
 
 	style := panelInactiveStyle
 	if active {
 		style = panelActiveStyle
 	}
 	return style.Width(innerW).Height(innerH).Render(sb.String())
+}
+
+func (m PRDetailModel) renderOverviewContent(innerW int) string {
+	if m.loading {
+		return lipgloss.NewStyle().Foreground(colorMuted).Render("Loading...")
+	}
+	if m.err != nil {
+		return lipgloss.NewStyle().Foreground(colorRed).Render("Error: " + TruncateString(m.err.Error(), innerW-8))
+	}
+	if m.notFound || m.pr == nil {
+		return lipgloss.NewStyle().Foreground(colorMuted).
+			Render("No linked PR found.\n\nBranch must contain\nthe Jira issue key.")
+	}
+
+	pr := m.pr
+	sourceBranch := strings.TrimPrefix(pr.SourceRefName, "refs/heads/")
+	targetBranch := strings.TrimPrefix(pr.TargetRefName, "refs/heads/")
+
+	var sb strings.Builder
+	sb.WriteString(fieldLabelStyle.Render("Status:") + " " + colorPRStatus(pr.Status) + "\n")
+	sb.WriteString(fieldLabelStyle.Render("Author:") + " " +
+		fieldValueStyle.Render(TruncateString(pr.CreatedBy.DisplayName, innerW-16)) + "\n")
+	sb.WriteString(fieldLabelStyle.Render("Branch:") + " " +
+		fieldValueStyle.Render(TruncateString(sourceBranch+" → "+targetBranch, innerW-16)) + "\n")
+
+	// Pipeline
+	sb.WriteString("\n")
+	if m.build == nil {
+		sb.WriteString(lipgloss.NewStyle().Foreground(colorMuted).Render("Pipeline: none") + "\n")
+	} else {
+		sb.WriteString(fieldLabelStyle.Render("Pipeline:") + " " + colorBuildStatus(m.build.Status, m.build.Result) + "\n")
+	}
+
+	// Reviewers
+	sb.WriteString("\n")
+	sb.WriteString(sectionStyle.Render("Reviewers") + "\n")
+	if len(m.reviewers) == 0 {
+		sb.WriteString("  " + lipgloss.NewStyle().Foreground(colorMuted).Render("None assigned") + "\n")
+	} else {
+		for _, r := range m.reviewers {
+			line := fmt.Sprintf("  %-20s %s",
+				TruncateString(r.DisplayName, 20),
+				colorVoteLabel(r.Vote),
+			)
+			sb.WriteString(TruncateString(line, innerW) + "\n")
+		}
+	}
+
+	return sb.String()
 }
 
 // renderFilesPanel renders the PR files/diff/comments panel (right-bottom).
