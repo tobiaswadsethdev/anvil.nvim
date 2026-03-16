@@ -686,103 +686,6 @@ func writeField(sb *strings.Builder, label, value string) {
 	sb.WriteString(fieldLabelStyle.Render(label+":") + " " + fieldValueStyle.Render(value) + "\n")
 }
 
-func indentText(text string, spaces int) string {
-	indent := strings.Repeat(" ", spaces)
-	lines := strings.Split(text, "\n")
-	var result []string
-	for _, line := range lines {
-		result = append(result, indent+line)
-	}
-	return strings.Join(result, "\n") + "\n"
-}
-
-func indentWrappedText(text string, width int, spaces int) string {
-	if width < 1 {
-		width = 1
-	}
-	indent := strings.Repeat(" ", spaces)
-	lines := strings.Split(text, "\n")
-	var out []string
-	for _, line := range lines {
-		line = strings.TrimRight(line, " \t")
-		if strings.TrimSpace(line) == "" {
-			out = append(out, indent)
-			continue
-		}
-		wrapped := wrapLine(line, width)
-		for _, w := range wrapped {
-			out = append(out, indent+w)
-		}
-	}
-	return strings.Join(out, "\n") + "\n"
-}
-
-func wrapLine(line string, width int) []string {
-	if width < 1 {
-		return []string{line}
-	}
-	if lipgloss.Width(line) <= width {
-		return []string{line}
-	}
-
-	words := strings.Fields(line)
-	if len(words) == 0 {
-		return []string{""}
-	}
-
-	var lines []string
-	cur := words[0]
-	if lipgloss.Width(cur) > width {
-		for lipgloss.Width(cur) > width {
-			cut := cutToWidth(cur, width)
-			lines = append(lines, cut)
-			cur = strings.TrimPrefix(cur, cut)
-		}
-	}
-	for _, w := range words[1:] {
-		candidate := cur + " " + w
-		if lipgloss.Width(candidate) <= width {
-			cur = candidate
-			continue
-		}
-		lines = append(lines, cur)
-		if lipgloss.Width(w) <= width {
-			cur = w
-			continue
-		}
-		for lipgloss.Width(w) > width {
-			cut := cutToWidth(w, width)
-			lines = append(lines, cut)
-			w = strings.TrimPrefix(w, cut)
-		}
-		cur = w
-	}
-	if cur != "" {
-		lines = append(lines, cur)
-	}
-	return lines
-}
-
-func cutToWidth(s string, width int) string {
-	if width < 1 {
-		return s
-	}
-	runes := []rune(s)
-	if len(runes) == 0 {
-		return s
-	}
-	for i := range runes {
-		part := string(runes[:i+1])
-		if lipgloss.Width(part) > width {
-			if i == 0 {
-				return string(runes[:1])
-			}
-			return string(runes[:i])
-		}
-	}
-	return s
-}
-
 func formatTime(t time.Time) string {
 	if t.IsZero() {
 		return "—"
@@ -807,48 +710,6 @@ func maxInt(a, b int) int {
 	return b
 }
 
-func normalizeBlock(block string, width, height int) []string {
-	if width < 1 {
-		width = 1
-	}
-	if height < 1 {
-		height = 1
-	}
-
-	rawLines := strings.Split(block, "\n")
-	for len(rawLines) > 0 && rawLines[len(rawLines)-1] == "" {
-		rawLines = rawLines[:len(rawLines)-1]
-	}
-
-	raw := make([]string, 0, len(rawLines))
-	for _, line := range rawLines {
-		if strings.Contains(line, "\x1b[") {
-			raw = append(raw, line)
-			continue
-		}
-		wrapped := wrapLine(line, width)
-		if len(wrapped) == 0 {
-			raw = append(raw, "")
-			continue
-		}
-		raw = append(raw, wrapped...)
-	}
-
-	lines := make([]string, height)
-	for i := 0; i < height; i++ {
-		if i < len(raw) {
-			line := raw[i]
-			if !strings.Contains(line, "\x1b[") && lipgloss.Width(line) > width {
-				line = cutToWidth(line, width)
-			}
-			lines[i] = padToWidth(line, width)
-		} else {
-			lines[i] = strings.Repeat(" ", width)
-		}
-	}
-	return lines
-}
-
 type positionedBlock struct {
 	rect  Rect
 	lines []string
@@ -860,25 +721,27 @@ func composeRectGrid(totalW, totalH int, blocks []positionedBlock) string {
 	}
 
 	rows := make([]string, totalH)
-	ordered := make([]positionedBlock, len(blocks))
-	copy(ordered, blocks)
-	sort.Slice(ordered, func(i, j int) bool {
-		if ordered[i].rect.Y == ordered[j].rect.Y {
-			return ordered[i].rect.X < ordered[j].rect.X
-		}
-		return ordered[i].rect.Y < ordered[j].rect.Y
-	})
 
 	for y := 0; y < totalH; y++ {
+		active := make([]positionedBlock, 0, len(blocks))
+		for _, b := range blocks {
+			if y >= b.rect.Y && y < b.rect.Y+b.rect.H {
+				active = append(active, b)
+			}
+		}
+		sort.Slice(active, func(i, j int) bool {
+			return active[i].rect.X < active[j].rect.X
+		})
+
 		cursor := 0
 		var sb strings.Builder
-		for _, b := range ordered {
-			if y < b.rect.Y || y >= b.rect.Y+b.rect.H {
-				continue
-			}
+		for _, b := range active {
 			if b.rect.X > cursor {
 				sb.WriteString(strings.Repeat(" ", b.rect.X-cursor))
 				cursor = b.rect.X
+			}
+			if b.rect.X < cursor {
+				continue
 			}
 			lineIdx := y - b.rect.Y
 			line := strings.Repeat(" ", b.rect.W)
@@ -894,12 +757,4 @@ func composeRectGrid(totalW, totalH int, blocks []positionedBlock) string {
 		rows[y] = sb.String()
 	}
 	return strings.Join(rows, "\n")
-}
-
-func padToWidth(s string, width int) string {
-	w := lipgloss.Width(s)
-	if w >= width {
-		return s
-	}
-	return s + strings.Repeat(" ", width-w)
 }

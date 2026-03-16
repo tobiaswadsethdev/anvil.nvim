@@ -627,6 +627,15 @@ func (m Model) renderOverlay(base, modal string) string {
 		return lipgloss.JoinVertical(lipgloss.Left, base, modal)
 	}
 
+	baseNorm := normalizeBlock(base, m.width, m.height)
+
+	modalW := lipgloss.Width(modal)
+	if modalW < 1 {
+		modalW = maxInt(1, m.width*70/100)
+	}
+	if modalW > m.width {
+		modalW = m.width
+	}
 	modalH := lipgloss.Height(modal)
 	if modalH < 1 {
 		modalH = 1
@@ -634,23 +643,36 @@ func (m Model) renderOverlay(base, modal string) string {
 	if modalH > m.height {
 		modalH = m.height
 	}
-	baseH := m.height - modalH
-	if baseH < 0 {
-		baseH = 0
+
+	modalX := (m.width - modalW) / 2
+	if modalX < 0 {
+		modalX = 0
+	}
+	modalY := (m.height - modalH) / 2
+	if modalY < 0 {
+		modalY = 0
 	}
 
-	modalBlock := lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center, lipgloss.Top).Render(modal)
+	modalBlock := lipgloss.NewStyle().Width(modalW).Render(modal)
+	modalNorm := normalizeBlock(modalBlock, modalW, modalH)
 
 	blocks := []positionedBlock{}
-	if baseH > 0 {
+	if modalY > 0 {
 		blocks = append(blocks, positionedBlock{
-			rect:  Rect{X: 0, Y: 0, W: m.width, H: baseH},
-			lines: normalizeBlock(base, m.width, baseH),
+			rect:  Rect{X: 0, Y: 0, W: m.width, H: modalY},
+			lines: baseNorm[:modalY],
+		})
+	}
+	bottomY := modalY + modalH
+	if bottomY < m.height {
+		blocks = append(blocks, positionedBlock{
+			rect:  Rect{X: 0, Y: bottomY, W: m.width, H: m.height - bottomY},
+			lines: baseNorm[bottomY:],
 		})
 	}
 	blocks = append(blocks, positionedBlock{
-		rect:  Rect{X: 0, Y: baseH, W: m.width, H: modalH},
-		lines: normalizeBlock(modalBlock, m.width, modalH),
+		rect:  Rect{X: modalX, Y: modalY, W: modalW, H: modalH},
+		lines: modalNorm,
 	})
 
 	return composeRectGrid(m.width, m.height, blocks)
