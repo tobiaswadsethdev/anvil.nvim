@@ -338,32 +338,31 @@ func (m DetailModel) view() string {
 	if !m.hasPR {
 		issuePanel := m.renderIssueInfoPanel(rects.Issue.W, rects.Issue.H, m.focusedPanel == panelIssueInfo)
 		descPanel := m.renderNoPRDescriptionPanel(rects.Desc.W, rects.Desc.H, m.focusedPanel == panelDescNoPR)
-
-		leftLines := normalizeBlock(issuePanel, rects.Issue.W, rects.Issue.H)
-		rightLines := normalizeBlock(descPanel, rects.Desc.W, rects.Desc.H)
-		rowLines := make([]string, rects.Issue.H)
-		for i := 0; i < rects.Issue.H; i++ {
-			rowLines[i] = leftLines[i] + " " + rightLines[i]
-		}
-		row := strings.Join(rowLines, "\n")
+		row := composeRectGrid(
+			m.width,
+			rects.Help.Y,
+			[]positionedBlock{
+				{rect: rects.Issue, lines: normalizeBlock(issuePanel, rects.Issue.W, rects.Issue.H)},
+				{rect: rects.Desc, lines: normalizeBlock(descPanel, rects.Desc.W, rects.Desc.H)},
+			},
+		)
 		return lipgloss.JoinVertical(lipgloss.Left, row, helpBar)
 	}
 
 	issuePanel := m.renderIssueInfoPanel(rects.Issue.W, rects.Issue.H, m.focusedPanel == panelIssueInfo)
 	prPanel := m.renderPRInfoPanel(rects.PR.W, rects.PR.H, m.focusedPanel == panelPRInfo)
-	leftCol := lipgloss.JoinVertical(lipgloss.Left, issuePanel, prPanel)
-
 	centerPanel := m.renderCenterPanel(rects.Center.W, rects.Center.H, m.focusedPanel == panelCenter)
 	rightPanel := m.renderRightPanel(rects.Right.W, rects.Right.H, m.focusedPanel == panelRight)
-
-	leftColLines := normalizeBlock(leftCol, rects.Issue.W, rects.Center.H)
-	centerLines := normalizeBlock(centerPanel, rects.Center.W, rects.Center.H)
-	rightLines := normalizeBlock(rightPanel, rects.Right.W, rects.Right.H)
-	rowLines := make([]string, rects.Center.H)
-	for i := 0; i < rects.Center.H; i++ {
-		rowLines[i] = leftColLines[i] + " " + centerLines[i] + " " + rightLines[i]
-	}
-	row := strings.Join(rowLines, "\n")
+	row := composeRectGrid(
+		m.width,
+		rects.Help.Y,
+		[]positionedBlock{
+			{rect: rects.Issue, lines: normalizeBlock(issuePanel, rects.Issue.W, rects.Issue.H)},
+			{rect: rects.PR, lines: normalizeBlock(prPanel, rects.PR.W, rects.PR.H)},
+			{rect: rects.Center, lines: normalizeBlock(centerPanel, rects.Center.W, rects.Center.H)},
+			{rect: rects.Right, lines: normalizeBlock(rightPanel, rects.Right.W, rects.Right.H)},
+		},
+	)
 	return lipgloss.JoinVertical(lipgloss.Left, row, helpBar)
 }
 
@@ -719,6 +718,13 @@ func wrapLine(line string, width int) []string {
 
 	var lines []string
 	cur := words[0]
+	if lipgloss.Width(cur) > width {
+		for lipgloss.Width(cur) > width {
+			cut := cutToWidth(cur, width)
+			lines = append(lines, cut)
+			cur = strings.TrimPrefix(cur, cut)
+		}
+	}
 	for _, w := range words[1:] {
 		candidate := cur + " " + w
 		if lipgloss.Width(candidate) <= width {
@@ -795,9 +801,23 @@ func normalizeBlock(block string, width, height int) []string {
 		height = 1
 	}
 
-	raw := strings.Split(block, "\n")
-	for len(raw) > 0 && raw[len(raw)-1] == "" {
-		raw = raw[:len(raw)-1]
+	rawLines := strings.Split(block, "\n")
+	for len(rawLines) > 0 && rawLines[len(rawLines)-1] == "" {
+		rawLines = rawLines[:len(rawLines)-1]
+	}
+
+	raw := make([]string, 0, len(rawLines))
+	for _, line := range rawLines {
+		if strings.Contains(line, "\x1b[") {
+			raw = append(raw, line)
+			continue
+		}
+		wrapped := wrapLine(line, width)
+		if len(wrapped) == 0 {
+			raw = append(raw, "")
+			continue
+		}
+		raw = append(raw, wrapped...)
 	}
 
 	lines := make([]string, height)
@@ -813,6 +833,53 @@ func normalizeBlock(block string, width, height int) []string {
 		}
 	}
 	return lines
+}
+
+type positionedBlock struct {
+	rect  Rect
+	lines []string
+}
+
+func composeRectGrid(totalW, totalH int, blocks []positionedBlock) string {
+	if totalW < 1 || totalH < 1 {
+		return ""
+	}
+
+	rows := make([]string, totalH)
+	ordered := make([]positionedBlock, len(blocks))
+	copy(ordered, blocks)
+	sort.Slice(ordered, func(i, j int) bool {
+		if ordered[i].rect.Y == ordered[j].rect.Y {
+			return ordered[i].rect.X < ordered[j].rect.X
+		}
+		return ordered[i].rect.Y < ordered[j].rect.Y
+	})
+
+	for y := 0; y < totalH; y++ {
+		cursor := 0
+		var sb strings.Builder
+		for _, b := range ordered {
+			if y < b.rect.Y || y >= b.rect.Y+b.rect.H {
+				continue
+			}
+			if b.rect.X > cursor {
+				sb.WriteString(strings.Repeat(" ", b.rect.X-cursor))
+				cursor = b.rect.X
+			}
+			lineIdx := y - b.rect.Y
+			line := strings.Repeat(" ", b.rect.W)
+			if lineIdx >= 0 && lineIdx < len(b.lines) {
+				line = b.lines[lineIdx]
+			}
+			sb.WriteString(line)
+			cursor = b.rect.X + b.rect.W
+		}
+		if cursor < totalW {
+			sb.WriteString(strings.Repeat(" ", totalW-cursor))
+		}
+		rows[y] = sb.String()
+	}
+	return strings.Join(rows, "\n")
 }
 
 func padToWidth(s string, width int) string {

@@ -623,7 +623,37 @@ func (m Model) View() string {
 }
 
 func (m Model) renderOverlay(base, modal string) string {
-	return lipgloss.JoinVertical(lipgloss.Left, base, modal)
+	if m.width < 1 || m.height < 1 {
+		return lipgloss.JoinVertical(lipgloss.Left, base, modal)
+	}
+
+	modalH := lipgloss.Height(modal)
+	if modalH < 1 {
+		modalH = 1
+	}
+	if modalH > m.height {
+		modalH = m.height
+	}
+	baseH := m.height - modalH
+	if baseH < 0 {
+		baseH = 0
+	}
+
+	modalBlock := lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center, lipgloss.Top).Render(modal)
+
+	blocks := []positionedBlock{}
+	if baseH > 0 {
+		blocks = append(blocks, positionedBlock{
+			rect:  Rect{X: 0, Y: 0, W: m.width, H: baseH},
+			lines: normalizeBlock(base, m.width, baseH),
+		})
+	}
+	blocks = append(blocks, positionedBlock{
+		rect:  Rect{X: 0, Y: baseH, W: m.width, H: modalH},
+		lines: normalizeBlock(modalBlock, m.width, modalH),
+	})
+
+	return composeRectGrid(m.width, m.height, blocks)
 }
 
 // Help strings

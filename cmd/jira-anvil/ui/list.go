@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -25,6 +24,35 @@ type ListModel struct {
 	table       table.Model
 	width       int
 	height      int
+}
+
+type listRects struct {
+	filter  Rect
+	content Rect
+	status  Rect
+	help    Rect
+}
+
+func computeListRects(w, h int) listRects {
+	if w < 1 {
+		w = 1
+	}
+	if h < 1 {
+		h = 1
+	}
+
+	filterH, statusH, helpH := 1, 1, 1
+	contentH := h - filterH - statusH - helpH
+	if contentH < 1 {
+		contentH = 1
+	}
+
+	return listRects{
+		filter:  Rect{X: 0, Y: 0, W: w, H: filterH},
+		content: Rect{X: 0, Y: filterH, W: w, H: contentH},
+		status:  Rect{X: 0, Y: filterH + contentH, W: w, H: statusH},
+		help:    Rect{X: 0, Y: filterH + contentH + statusH, W: w, H: helpH},
+	}
 }
 
 func NewListModel(cfg *config.Config, client *api.Client, sp spinner.Model) ListModel {
@@ -105,7 +133,8 @@ func (m *ListModel) buildTable() {
 		})
 	}
 
-	tableH := m.height - 4 // header + filter bar + status bar
+	rects := computeListRects(m.width, m.height)
+	tableH := rects.content.H - 1 // table header consumes one row
 	if tableH < 3 {
 		tableH = 3
 	}
@@ -150,6 +179,7 @@ func (m ListModel) update(msg tea.Msg) (ListModel, tea.Cmd) {
 func (m ListModel) view() string {
 	filter := m.cfg.Filters[m.filterIndex]
 	filterCount := len(m.cfg.Filters)
+	rects := computeListRects(m.width, m.height)
 
 	// Filter bar
 	nav := ""
@@ -159,20 +189,20 @@ func (m ListModel) view() string {
 	filterBar := filterBarStyle.Render(
 		fmt.Sprintf(" ◀[  %s%s  ]▶", filter.Name, nav),
 	)
-	filterBar = lipgloss.NewStyle().Width(m.width).Render(filterBar)
+	filterBar = lipgloss.NewStyle().Width(rects.filter.W).Render(filterBar)
 
 	// Content
 	var content string
 	if m.loading {
 		content = lipgloss.NewStyle().
-			Width(m.width).
-			Height(m.height - 4).
+			Width(rects.content.W).
+			Height(rects.content.H).
 			Align(lipgloss.Center, lipgloss.Center).
 			Render(m.spinner.View() + " Loading...")
 	} else if len(m.issues) == 0 {
 		content = lipgloss.NewStyle().
-			Width(m.width).
-			Height(m.height - 4).
+			Width(rects.content.W).
+			Height(rects.content.H).
 			Align(lipgloss.Center, lipgloss.Center).
 			Foreground(colorMuted).
 			Render("No issues found for this filter.")
@@ -182,13 +212,13 @@ func (m ListModel) view() string {
 
 	// Status bar
 	statusText := fmt.Sprintf(" %d issues • %s", m.total, filter.JQL)
-	if len(statusText) > m.width-2 {
-		statusText = TruncateString(statusText, m.width-2)
+	if len(statusText) > rects.status.W-2 {
+		statusText = TruncateString(statusText, rects.status.W-2)
 	}
-	statusBar := statusBarStyle.Width(m.width).Render(statusText)
+	statusBar := statusBarStyle.Width(rects.status.W).Render(statusText)
 
 	// Help bar
-	helpBar := helpStyle.Width(m.width).Render(
+	helpBar := helpStyle.Width(rects.help.W).Render(
 		"  " + keyStyle.Render("[/]") + " cycle  " +
 			keyStyle.Render("Enter") + " open  " +
 			keyStyle.Render("r") + " refresh  " +
@@ -197,7 +227,16 @@ func (m ListModel) view() string {
 			keyStyle.Render("q") + " quit",
 	)
 
-	return strings.Join([]string{filterBar, content, statusBar, helpBar}, "\n")
+	return composeRectGrid(
+		rects.filter.W,
+		rects.help.Y+rects.help.H,
+		[]positionedBlock{
+			{rect: rects.filter, lines: normalizeBlock(filterBar, rects.filter.W, rects.filter.H)},
+			{rect: rects.content, lines: normalizeBlock(content, rects.content.W, rects.content.H)},
+			{rect: rects.status, lines: normalizeBlock(statusBar, rects.status.W, rects.status.H)},
+			{rect: rects.help, lines: normalizeBlock(helpBar, rects.help.W, rects.help.H)},
+		},
+	)
 }
 
 func formatAge(t time.Time) string {
