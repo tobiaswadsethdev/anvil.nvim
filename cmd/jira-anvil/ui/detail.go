@@ -252,8 +252,7 @@ func (m DetailModel) view() string {
 		return "Loading..."
 	}
 
-	helpInnerW := maxInt(1, m.width-helpStyle.GetHorizontalFrameSize())
-	helpBar := helpStyle.Width(helpInnerW).Height(1).MaxHeight(1).Render(
+	helpBar := helpStyle.Width(m.width).Render(
 		"  " + keyStyle.Render("Tab/S-Tab") + " panel  " +
 			keyStyle.Render("1-"+fmt.Sprintf("%d", m.numPanels())) + " jump  " +
 			keyStyle.Render("[/]") + " tab  " +
@@ -272,7 +271,7 @@ func (m DetailModel) view() string {
 		issuePanel := m.renderIssueInfoPanel(leftW, h, m.focusedPanel == panelIssueInfo)
 		descPanel := m.renderNoPRDescriptionPanel(rightW, h, m.focusedPanel == panelDescNoPR)
 		row := lipgloss.JoinHorizontal(lipgloss.Top, issuePanel, " ", descPanel)
-		row = fillWidth(row, m.width)
+		row = lipgloss.NewStyle().Width(m.width).Render(row)
 		return lipgloss.JoinVertical(lipgloss.Left, row, helpBar)
 	}
 
@@ -286,7 +285,7 @@ func (m DetailModel) view() string {
 	rightPanel := m.renderRightPanel(l.rightW, l.colH, m.focusedPanel == panelRight)
 
 	row := lipgloss.JoinHorizontal(lipgloss.Top, leftCol, " ", centerPanel, " ", rightPanel)
-	row = fillWidth(row, m.width)
+	row = lipgloss.NewStyle().Width(m.width).Render(row)
 	return lipgloss.JoinVertical(lipgloss.Left, row, helpBar)
 }
 
@@ -713,12 +712,4 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
-}
-
-func fillWidth(s string, width int) string {
-	w := lipgloss.Width(s)
-	if w >= width {
-		return s
-	}
-	return s + strings.Repeat(" ", width-w)
 }

@@ -170,7 +170,7 @@ func (m PRDetailModel) renderOverviewPanel(outerW, outerH int, active bool) stri
 	if active {
 		style = panelActiveStyle
 	}
-	return style.Width(innerW).MaxWidth(innerW).Height(innerH).MaxHeight(innerH).Render(sb.String())
+	return style.Width(innerW).Height(innerH).Render(sb.String())
 }
 
 // renderFilesPanel renders the PR files/diff/comments panel (right-bottom).
@@ -207,7 +207,7 @@ func (m PRDetailModel) renderFilesPanel(outerW, outerH int, active bool) string 
 	if active {
 		style = panelActiveStyle
 	}
-	return style.Width(innerW).MaxWidth(innerW).Height(innerH).MaxHeight(innerH).Render(content)
+	return style.Width(innerW).Height(innerH).Render(content)
 }
 
 // refreshFilesViewport rebuilds the files viewport content after a tab switch.
