@@ -19,8 +19,8 @@ type PRDetailModel struct {
 	threads   []api.PRCommentThread
 
 	// Files/Diff/Comments panel
-	filesTabIndex  int // 0=Files, 1=Diff, 2=Comments
-	filesViewport  viewport.Model
+	filesTabIndex int // 0=Files, 1=Diff, 2=Comments
+	filesViewport viewport.Model
 
 	loading  bool
 	notFound bool
@@ -170,7 +170,7 @@ func (m PRDetailModel) renderOverviewPanel(outerW, outerH int, active bool) stri
 	if active {
 		style = panelActiveStyle
 	}
-	return style.Width(innerW).Height(innerH).Render(sb.String())
+	return style.Width(innerW).MaxWidth(innerW).Height(innerH).MaxHeight(innerH).Render(sb.String())
 }
 
 // renderFilesPanel renders the PR files/diff/comments panel (right-bottom).
@@ -207,7 +207,7 @@ func (m PRDetailModel) renderFilesPanel(outerW, outerH int, active bool) string 
 	if active {
 		style = panelActiveStyle
 	}
-	return style.Width(innerW).Height(innerH).Render(content)
+	return style.Width(innerW).MaxWidth(innerW).Height(innerH).MaxHeight(innerH).Render(content)
 }
 
 // refreshFilesViewport rebuilds the files viewport content after a tab switch.
@@ -229,7 +229,7 @@ func renderFilesContent(tabIndex int, fileDiffs []api.FileDiff, threads []api.PR
 	case 1:
 		return renderDiffTab(fileDiffs)
 	case 2:
-		return renderPRCommentsTab(threads)
+		return renderPRCommentsTab(threads, width)
 	}
 	return ""
 }
@@ -292,11 +292,12 @@ func renderDiffTab(fileDiffs []api.FileDiff) string {
 	return sb.String()
 }
 
-func renderPRCommentsTab(threads []api.PRCommentThread) string {
+func renderPRCommentsTab(threads []api.PRCommentThread, width int) string {
 	if len(threads) == 0 {
 		return lipgloss.NewStyle().Foreground(colorMuted).Render("  (no comments yet  •  press c to add one)")
 	}
 	var sb strings.Builder
+	bodyW := maxInt(1, width-4)
 	for i, t := range threads {
 		if len(t.Comments) == 0 {
 			continue
@@ -309,28 +310,28 @@ func renderPRCommentsTab(threads []api.PRCommentThread) string {
 			lipgloss.NewStyle().Foreground(colorFg).Render(root.Author.DisplayName),
 			lipgloss.NewStyle().Foreground(colorMuted).Render(formatTime(root.PublishedDate)),
 		)
-		sb.WriteString("  " + header + "\n")
+		sb.WriteString("  " + TruncateString(header, maxInt(1, width-2)) + "\n")
 
 		body := strings.ReplaceAll(root.Content, "\n", " ")
-		if len(body) > 120 {
-			body = body[:117] + "..."
+		body = strings.TrimSpace(body)
+		if body != "" {
+			sb.WriteString(lipgloss.NewStyle().Foreground(colorFg).Render(indentWrappedText(body, bodyW, 4)))
 		}
-		sb.WriteString("  " + lipgloss.NewStyle().Foreground(colorFg).Render("    "+body) + "\n")
 
 		for _, reply := range t.Comments[1:] {
 			if reply.IsDeleted || reply.CommentType == "system" {
 				continue
 			}
 			replyBody := strings.ReplaceAll(reply.Content, "\n", " ")
-			if len(replyBody) > 100 {
-				replyBody = replyBody[:97] + "..."
-			}
-			replyLine := fmt.Sprintf("    ↳ %s  •  %s  •  %s",
+			replyLine := fmt.Sprintf("↳ %s  •  %s",
 				lipgloss.NewStyle().Foreground(colorFg).Render(reply.Author.DisplayName),
 				lipgloss.NewStyle().Foreground(colorMuted).Render(formatTime(reply.PublishedDate)),
-				lipgloss.NewStyle().Foreground(colorMuted).Render(replyBody),
 			)
-			sb.WriteString("  " + replyLine + "\n")
+			sb.WriteString("  " + TruncateString(replyLine, maxInt(1, width-2)) + "\n")
+			replyBody = strings.TrimSpace(replyBody)
+			if replyBody != "" {
+				sb.WriteString(lipgloss.NewStyle().Foreground(colorMuted).Render(indentWrappedText(replyBody, bodyW, 6)))
+			}
 		}
 		sb.WriteString("\n")
 	}

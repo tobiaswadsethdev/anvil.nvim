@@ -252,7 +252,8 @@ func (m DetailModel) view() string {
 		return "Loading..."
 	}
 
-	helpBar := helpStyle.Width(m.width).Render(
+	helpInnerW := maxInt(1, m.width-helpStyle.GetHorizontalFrameSize())
+	helpBar := helpStyle.Width(helpInnerW).Height(1).MaxHeight(1).Render(
 		"  " + keyStyle.Render("Tab/S-Tab") + " panel  " +
 			keyStyle.Render("1-"+fmt.Sprintf("%d", m.numPanels())) + " jump  " +
 			keyStyle.Render("[/]") + " tab  " +
@@ -271,6 +272,7 @@ func (m DetailModel) view() string {
 		issuePanel := m.renderIssueInfoPanel(leftW, h, m.focusedPanel == panelIssueInfo)
 		descPanel := m.renderNoPRDescriptionPanel(rightW, h, m.focusedPanel == panelDescNoPR)
 		row := lipgloss.JoinHorizontal(lipgloss.Top, issuePanel, " ", descPanel)
+		row = lipgloss.NewStyle().Width(m.width).MaxWidth(m.width).Render(row)
 		return lipgloss.JoinVertical(lipgloss.Left, row, helpBar)
 	}
 
@@ -284,6 +286,7 @@ func (m DetailModel) view() string {
 	rightPanel := m.renderRightPanel(l.rightW, l.colH, m.focusedPanel == panelRight)
 
 	row := lipgloss.JoinHorizontal(lipgloss.Top, leftCol, " ", centerPanel, " ", rightPanel)
+	row = lipgloss.NewStyle().Width(m.width).MaxWidth(m.width).Render(row)
 	return lipgloss.JoinVertical(lipgloss.Left, row, helpBar)
 }
 
@@ -330,7 +333,7 @@ func (m DetailModel) renderIssueInfoPanel(outerW, outerH int, active bool) strin
 		style = panelActiveStyle
 	}
 	innerH := maxInt(1, outerH-2)
-	return style.Width(innerW).Height(innerH).Render(sb.String())
+	return style.Width(innerW).MaxWidth(innerW).Height(innerH).MaxHeight(innerH).Render(sb.String())
 }
 
 func (m DetailModel) renderNoPRDescriptionPanel(outerW, outerH int, active bool) string {
@@ -353,7 +356,7 @@ func (m DetailModel) renderNoPRDescriptionPanel(outerW, outerH int, active bool)
 	if active {
 		style = panelActiveStyle
 	}
-	return style.Width(innerW).Height(innerH).Render(content)
+	return style.Width(innerW).MaxWidth(innerW).Height(innerH).MaxHeight(innerH).Render(content)
 }
 
 func (m DetailModel) renderCenterPanel(outerW, outerH int, active bool) string {
@@ -376,7 +379,7 @@ func (m DetailModel) renderCenterPanel(outerW, outerH int, active bool) string {
 	if active {
 		style = panelActiveStyle
 	}
-	return style.Width(innerW).Height(innerH).Render(content)
+	return style.Width(innerW).MaxWidth(innerW).Height(innerH).MaxHeight(innerH).Render(content)
 }
 
 func (m DetailModel) renderRightPanel(outerW, outerH int, active bool) string {
@@ -399,7 +402,7 @@ func (m DetailModel) renderRightPanel(outerW, outerH int, active bool) string {
 	if active {
 		style = panelActiveStyle
 	}
-	return style.Width(innerW).Height(innerH).Render(content)
+	return style.Width(innerW).MaxWidth(innerW).Height(innerH).MaxHeight(innerH).Render(content)
 }
 
 func renderDescContent(issue *api.Issue, width int) string {
@@ -408,7 +411,7 @@ func renderDescContent(issue *api.Issue, width int) string {
 	if issue.Fields.Description != nil {
 		desc := strings.TrimSpace(adf.Render(issue.Fields.Description))
 		if desc != "" {
-			sb.WriteString(indentText(desc, 2))
+			sb.WriteString(indentWrappedText(desc, maxInt(1, width-2), 2))
 		} else {
 			sb.WriteString(lipgloss.NewStyle().Foreground(colorMuted).Render("  (no description)"))
 		}
@@ -437,7 +440,7 @@ func renderCommentsContent(issue *api.Issue, width int) string {
 
 		body := strings.TrimSpace(adf.Render(comment.Body))
 		if body != "" {
-			sb.WriteString(indentText(body, 2))
+			sb.WriteString(indentWrappedText(body, maxInt(1, width-2), 2))
 		}
 		sb.WriteString("\n")
 		sb.WriteString(strings.Repeat("─", maxInt(1, width-4)) + "\n")
@@ -474,8 +477,8 @@ func renderJiraHistoryContent(issue *api.Issue, width int) string {
 		for _, item := range prioritized {
 			fromVal := normalizeHistoryValue(item.FromString)
 			toVal := normalizeHistoryValue(item.ToString)
-			line := fmt.Sprintf("    %s: %s -> %s", item.Field, fromVal, toVal)
-			sb.WriteString(TruncateString(line, maxInt(12, width-2)) + "\n")
+			line := fmt.Sprintf("%s: %s -> %s", item.Field, fromVal, toVal)
+			sb.WriteString(indentWrappedText(line, maxInt(1, width-4), 4))
 		}
 		if extra > 0 {
 			sb.WriteString(lipgloss.NewStyle().Foreground(colorMuted).Render(fmt.Sprintf("    (+%d more changes)", extra)) + "\n")
@@ -585,7 +588,7 @@ func (m *DetailModel) refreshRightViewport() {
 	}
 	switch m.rightTabIndex {
 	case 0:
-		m.rightViewport.SetContent(renderPRCommentsTab(m.prModel.threads))
+		m.rightViewport.SetContent(renderPRCommentsTab(m.prModel.threads, innerW))
 	case 1:
 		m.rightViewport.SetContent(renderCommentsContent(m.issue, innerW))
 	default:
@@ -606,6 +609,86 @@ func indentText(text string, spaces int) string {
 		result = append(result, indent+line)
 	}
 	return strings.Join(result, "\n") + "\n"
+}
+
+func indentWrappedText(text string, width int, spaces int) string {
+	if width < 1 {
+		width = 1
+	}
+	indent := strings.Repeat(" ", spaces)
+	lines := strings.Split(text, "\n")
+	var out []string
+	for _, line := range lines {
+		line = strings.TrimRight(line, " \t")
+		if strings.TrimSpace(line) == "" {
+			out = append(out, indent)
+			continue
+		}
+		wrapped := wrapLine(line, width)
+		for _, w := range wrapped {
+			out = append(out, indent+w)
+		}
+	}
+	return strings.Join(out, "\n") + "\n"
+}
+
+func wrapLine(line string, width int) []string {
+	if width < 1 {
+		return []string{line}
+	}
+	if lipgloss.Width(line) <= width {
+		return []string{line}
+	}
+
+	words := strings.Fields(line)
+	if len(words) == 0 {
+		return []string{""}
+	}
+
+	var lines []string
+	cur := words[0]
+	for _, w := range words[1:] {
+		candidate := cur + " " + w
+		if lipgloss.Width(candidate) <= width {
+			cur = candidate
+			continue
+		}
+		lines = append(lines, cur)
+		if lipgloss.Width(w) <= width {
+			cur = w
+			continue
+		}
+		for lipgloss.Width(w) > width {
+			cut := cutToWidth(w, width)
+			lines = append(lines, cut)
+			w = strings.TrimPrefix(w, cut)
+		}
+		cur = w
+	}
+	if cur != "" {
+		lines = append(lines, cur)
+	}
+	return lines
+}
+
+func cutToWidth(s string, width int) string {
+	if width < 1 {
+		return s
+	}
+	runes := []rune(s)
+	if len(runes) == 0 {
+		return s
+	}
+	for i := range runes {
+		part := string(runes[:i+1])
+		if lipgloss.Width(part) > width {
+			if i == 0 {
+				return string(runes[:1])
+			}
+			return string(runes[:i])
+		}
+	}
+	return s
 }
 
 func formatTime(t time.Time) string {
