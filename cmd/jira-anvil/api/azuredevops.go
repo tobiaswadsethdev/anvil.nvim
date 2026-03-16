@@ -50,9 +50,9 @@ type PullRequest struct {
 	CreatedBy     struct {
 		DisplayName string `json:"displayName"`
 	} `json:"createdBy"`
-	CreationDate         time.Time `json:"creationDate"`
-	SourceRefName        string    `json:"sourceRefName"` // "refs/heads/feature/CODE-123"
-	TargetRefName        string    `json:"targetRefName"`
+	CreationDate          time.Time `json:"creationDate"`
+	SourceRefName         string    `json:"sourceRefName"` // "refs/heads/feature/CODE-123"
+	TargetRefName         string    `json:"targetRefName"`
 	LastMergeSourceCommit struct {
 		CommitID string `json:"commitId"`
 	} `json:"lastMergeSourceCommit"`
@@ -379,6 +379,7 @@ func (c *AzdoClient) GetChangedFiles(pr *PullRequest) ([]ChangedFile, error) {
 				Path             string `json:"path"`
 				ObjectID         string `json:"objectId"`
 				OriginalObjectID string `json:"originalObjectId"`
+				GitObjectType    string `json:"gitObjectType"`
 			} `json:"item"`
 			ChangeType string `json:"changeType"`
 		} `json:"changes"`
@@ -388,9 +389,23 @@ func (c *AzdoClient) GetChangedFiles(pr *PullRequest) ([]ChangedFile, error) {
 	}
 
 	files := make([]ChangedFile, 0, len(result.Changes))
+	seen := make(map[string]struct{}, len(result.Changes))
 	for _, ch := range result.Changes {
+		if strings.ToLower(strings.TrimSpace(ch.Item.GitObjectType)) != "blob" {
+			continue // skip directory/tree entries
+		}
+		path := strings.TrimSpace(ch.Item.Path)
+		if path == "" {
+			continue
+		}
+		normalized := strings.ToLower(path)
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+
 		files = append(files, ChangedFile{
-			Path:             ch.Item.Path,
+			Path:             path,
 			ChangeType:       ch.ChangeType,
 			ObjectID:         ch.Item.ObjectID,
 			OriginalObjectID: ch.Item.OriginalObjectID,

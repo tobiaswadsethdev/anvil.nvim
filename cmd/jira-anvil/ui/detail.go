@@ -272,7 +272,7 @@ func (m DetailModel) view() string {
 		issuePanel := m.renderIssueInfoPanel(leftW, h, m.focusedPanel == panelIssueInfo)
 		descPanel := m.renderNoPRDescriptionPanel(rightW, h, m.focusedPanel == panelDescNoPR)
 		row := lipgloss.JoinHorizontal(lipgloss.Top, issuePanel, " ", descPanel)
-		row = lipgloss.NewStyle().Width(m.width).MaxWidth(m.width).Render(row)
+		row = fillWidth(row, m.width)
 		return lipgloss.JoinVertical(lipgloss.Left, row, helpBar)
 	}
 
@@ -286,7 +286,7 @@ func (m DetailModel) view() string {
 	rightPanel := m.renderRightPanel(l.rightW, l.colH, m.focusedPanel == panelRight)
 
 	row := lipgloss.JoinHorizontal(lipgloss.Top, leftCol, " ", centerPanel, " ", rightPanel)
-	row = lipgloss.NewStyle().Width(m.width).MaxWidth(m.width).Render(row)
+	row = fillWidth(row, m.width)
 	return lipgloss.JoinVertical(lipgloss.Left, row, helpBar)
 }
 
@@ -333,7 +333,7 @@ func (m DetailModel) renderIssueInfoPanel(outerW, outerH int, active bool) strin
 		style = panelActiveStyle
 	}
 	innerH := maxInt(1, outerH-2)
-	return style.Width(innerW).MaxWidth(innerW).Height(innerH).MaxHeight(innerH).Render(sb.String())
+	return style.Width(innerW).Height(innerH).Render(sb.String())
 }
 
 func (m DetailModel) renderNoPRDescriptionPanel(outerW, outerH int, active bool) string {
@@ -356,7 +356,7 @@ func (m DetailModel) renderNoPRDescriptionPanel(outerW, outerH int, active bool)
 	if active {
 		style = panelActiveStyle
 	}
-	return style.Width(innerW).MaxWidth(innerW).Height(innerH).MaxHeight(innerH).Render(content)
+	return style.Width(innerW).Height(innerH).Render(content)
 }
 
 func (m DetailModel) renderCenterPanel(outerW, outerH int, active bool) string {
@@ -379,7 +379,7 @@ func (m DetailModel) renderCenterPanel(outerW, outerH int, active bool) string {
 	if active {
 		style = panelActiveStyle
 	}
-	return style.Width(innerW).MaxWidth(innerW).Height(innerH).MaxHeight(innerH).Render(content)
+	return style.Width(innerW).Height(innerH).Render(content)
 }
 
 func (m DetailModel) renderRightPanel(outerW, outerH int, active bool) string {
@@ -402,7 +402,7 @@ func (m DetailModel) renderRightPanel(outerW, outerH int, active bool) string {
 	if active {
 		style = panelActiveStyle
 	}
-	return style.Width(innerW).MaxWidth(innerW).Height(innerH).MaxHeight(innerH).Render(content)
+	return style.Width(innerW).Height(innerH).Render(content)
 }
 
 func renderDescContent(issue *api.Issue, width int) string {
@@ -713,4 +713,12 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func fillWidth(s string, width int) string {
+	w := lipgloss.Width(s)
+	if w >= width {
+		return s
+	}
+	return s + strings.Repeat(" ", width-w)
 }
