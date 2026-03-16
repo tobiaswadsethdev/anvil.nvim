@@ -239,3 +239,142 @@ func TruncateString(s string, maxLen int) string {
 	}
 	return s[:maxLen-3] + "..."
 }
+
+func indentWrappedText(text string, width int, spaces int) string {
+	if width < 1 {
+		width = 1
+	}
+	indent := strings.Repeat(" ", spaces)
+	lines := strings.Split(text, "\n")
+	var out []string
+	for _, line := range lines {
+		line = strings.TrimRight(line, " \t")
+		if strings.TrimSpace(line) == "" {
+			out = append(out, indent)
+			continue
+		}
+		wrapped := wrapLine(line, width)
+		for _, w := range wrapped {
+			out = append(out, indent+w)
+		}
+	}
+	return strings.Join(out, "\n") + "\n"
+}
+
+func wrapLine(line string, width int) []string {
+	if width < 1 {
+		return []string{line}
+	}
+	if lipgloss.Width(line) <= width {
+		return []string{line}
+	}
+
+	words := strings.Fields(line)
+	if len(words) == 0 {
+		return []string{""}
+	}
+
+	var lines []string
+	cur := words[0]
+	if lipgloss.Width(cur) > width {
+		for lipgloss.Width(cur) > width {
+			cut := cutToWidth(cur, width)
+			lines = append(lines, cut)
+			cur = strings.TrimPrefix(cur, cut)
+		}
+	}
+	for _, w := range words[1:] {
+		candidate := cur + " " + w
+		if lipgloss.Width(candidate) <= width {
+			cur = candidate
+			continue
+		}
+		if cur != "" {
+			lines = append(lines, cur)
+		}
+		if lipgloss.Width(w) <= width {
+			cur = w
+			continue
+		}
+		for lipgloss.Width(w) > width {
+			cut := cutToWidth(w, width)
+			lines = append(lines, cut)
+			w = strings.TrimPrefix(w, cut)
+		}
+		cur = w
+	}
+	if cur != "" {
+		lines = append(lines, cur)
+	}
+	return lines
+}
+
+func cutToWidth(s string, width int) string {
+	if width < 1 {
+		return s
+	}
+	runes := []rune(s)
+	if len(runes) == 0 {
+		return s
+	}
+	for i := range runes {
+		part := string(runes[:i+1])
+		if lipgloss.Width(part) > width {
+			if i == 0 {
+				return string(runes[:1])
+			}
+			return string(runes[:i])
+		}
+	}
+	return s
+}
+
+func normalizeBlock(block string, width, height int) []string {
+	if width < 1 {
+		width = 1
+	}
+	if height < 1 {
+		height = 1
+	}
+
+	rawLines := strings.Split(block, "\n")
+	for len(rawLines) > 0 && rawLines[len(rawLines)-1] == "" {
+		rawLines = rawLines[:len(rawLines)-1]
+	}
+
+	raw := make([]string, 0, len(rawLines))
+	for _, line := range rawLines {
+		if strings.Contains(line, "\x1b[") {
+			raw = append(raw, line)
+			continue
+		}
+		wrapped := wrapLine(line, width)
+		if len(wrapped) == 0 {
+			raw = append(raw, "")
+			continue
+		}
+		raw = append(raw, wrapped...)
+	}
+
+	lines := make([]string, height)
+	for i := 0; i < height; i++ {
+		if i < len(raw) {
+			line := raw[i]
+			if !strings.Contains(line, "\x1b[") && lipgloss.Width(line) > width {
+				line = cutToWidth(line, width)
+			}
+			lines[i] = padToWidth(line, width)
+		} else {
+			lines[i] = strings.Repeat(" ", width)
+		}
+	}
+	return lines
+}
+
+func padToWidth(s string, width int) string {
+	w := lipgloss.Width(s)
+	if w >= width {
+		return s
+	}
+	return s + strings.Repeat(" ", width-w)
+}
