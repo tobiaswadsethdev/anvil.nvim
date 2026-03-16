@@ -216,6 +216,16 @@ func panelDivider(innerW int) string {
 	return strings.Repeat("─", maxInt(1, innerW-2))
 }
 
+func renderPanelScaffold(num int, title string, active bool, tabs []string, activeTab int, innerW int, body string) string {
+	parts := []string{renderPanelTitle(num, title, active)}
+	if len(tabs) > 0 {
+		parts = append(parts, renderPanelTabs(tabs, activeTab, innerW))
+	}
+	parts = append(parts, panelDivider(innerW))
+	parts = append(parts, body)
+	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+}
+
 // TruncateString truncates a string to maxLen, adding ellipsis if needed.
 func TruncateString(s string, maxLen int) string {
 	if maxLen <= 0 {

@@ -112,17 +112,13 @@ func (m PRDetailModel) updateFilesViewport(msg tea.Msg) (PRDetailModel, tea.Cmd)
 // renderOverviewPanel renders the compact PR overview for the left-bottom panel.
 func (m PRDetailModel) renderOverviewPanel(outerW, outerH int, active bool) string {
 	innerW, innerH := panelInnerSize(outerW, outerH)
-
-	var sb strings.Builder
-	sb.WriteString(renderPanelTitle(2, "Pull Request", active) + "\n")
-	sb.WriteString(panelDivider(innerW) + "\n")
-	sb.WriteString(m.renderOverviewContent(innerW))
+	content := renderPanelScaffold(2, "Pull Request", active, nil, 0, innerW, m.renderOverviewContent(innerW))
 
 	style := panelInactiveStyle
 	if active {
 		style = panelActiveStyle
 	}
-	return style.Width(innerW).Height(innerH).Render(sb.String())
+	return style.Width(innerW).Height(innerH).Render(content)
 }
 
 func (m PRDetailModel) renderOverviewContent(innerW int) string {
@@ -179,9 +175,6 @@ func (m PRDetailModel) renderFilesPanel(outerW, outerH int, active bool) string 
 	innerW, innerH := panelInnerSize(outerW, outerH)
 
 	tabs := []string{"Files", "Diff", "Comments"}
-	title := renderPanelTitle(4, "PR Files", active)
-	tabBar := renderPanelTabs(tabs, m.filesTabIndex, innerW)
-	divider := panelDivider(innerW)
 
 	var vpContent string
 	if m.loading {
@@ -189,13 +182,7 @@ func (m PRDetailModel) renderFilesPanel(outerW, outerH int, active bool) string 
 	} else {
 		vpContent = m.filesViewport.View()
 	}
-
-	content := lipgloss.JoinVertical(lipgloss.Left,
-		title,
-		tabBar,
-		divider,
-		vpContent,
-	)
+	content := renderPanelScaffold(4, "PR Files", active, tabs, m.filesTabIndex, innerW, vpContent)
 
 	style := panelInactiveStyle
 	if active {

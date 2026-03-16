@@ -52,6 +52,22 @@ type detailLayout struct {
 	leftBottomH int
 }
 
+type Rect struct {
+	X int
+	Y int
+	W int
+	H int
+}
+
+type DetailRects struct {
+	Issue  Rect
+	PR     Rect
+	Desc   Rect
+	Center Rect
+	Right  Rect
+	Help   Rect
+}
+
 func NewDetailModel(issue *api.Issue, w, h int, hasPR bool) DetailModel {
 	m := DetailModel{
 		issue:  issue,
@@ -118,6 +134,32 @@ func panelHeights(totalH int, hasPR bool) (leftTopH, rightTopH, bottomH int) {
 		bottomH = 6
 	}
 	return
+}
+
+func computeDetailRects(w, h int, hasPR bool) DetailRects {
+	helpH := 1
+	contentH := maxInt(1, h-helpH)
+
+	if !hasPR {
+		leftW, rightW := noPRColumnWidths(w)
+		return DetailRects{
+			Issue: Rect{X: 0, Y: 0, W: leftW, H: contentH},
+			Desc:  Rect{X: leftW + 1, Y: 0, W: rightW, H: contentH},
+			Help:  Rect{X: 0, Y: contentH, W: w, H: helpH},
+		}
+	}
+
+	l := layoutForPR(w, h)
+	centerX := l.leftW + 1
+	rightX := centerX + l.centerW + 1
+
+	return DetailRects{
+		Issue:  Rect{X: 0, Y: 0, W: l.leftW, H: l.leftTopH},
+		PR:     Rect{X: 0, Y: l.leftTopH, W: l.leftW, H: l.leftBottomH},
+		Center: Rect{X: centerX, Y: 0, W: l.centerW, H: l.colH},
+		Right:  Rect{X: rightX, Y: 0, W: l.rightW, H: l.colH},
+		Help:   Rect{X: 0, Y: l.colH, W: w, H: helpH},
+	}
 }
 
 func layoutForPR(totalW, totalH int) detailLayout {
@@ -327,17 +369,13 @@ func (m DetailModel) view() string {
 
 func (m DetailModel) renderIssueInfoPanel(outerW, outerH int, active bool) string {
 	innerW, innerH := panelInnerSize(outerW, outerH)
-
-	var sb strings.Builder
-	sb.WriteString(renderPanelTitle(1, "Issue Info", active) + "\n")
-	sb.WriteString(panelDivider(innerW) + "\n")
-	sb.WriteString(m.issueViewport.View())
+	content := renderPanelScaffold(1, "Issue Info", active, nil, 0, innerW, m.issueViewport.View())
 
 	style := panelInactiveStyle
 	if active {
 		style = panelActiveStyle
 	}
-	return style.Width(innerW).Height(innerH).Render(sb.String())
+	return style.Width(innerW).Height(innerH).Render(content)
 }
 
 func renderIssueInfoContent(issue *api.Issue, innerW int) string {
@@ -377,33 +415,20 @@ func renderIssueInfoContent(issue *api.Issue, innerW int) string {
 
 func (m DetailModel) renderPRInfoPanel(outerW, outerH int, active bool) string {
 	innerW, innerH := panelInnerSize(outerW, outerH)
-
-	var sb strings.Builder
-	sb.WriteString(renderPanelTitle(2, "Pull Request", active) + "\n")
-	sb.WriteString(panelDivider(innerW) + "\n")
-	sb.WriteString(m.prInfoViewport.View())
+	content := renderPanelScaffold(2, "Pull Request", active, nil, 0, innerW, m.prInfoViewport.View())
 
 	style := panelInactiveStyle
 	if active {
 		style = panelActiveStyle
 	}
-	return style.Width(innerW).Height(innerH).Render(sb.String())
+	return style.Width(innerW).Height(innerH).Render(content)
 }
 
 func (m DetailModel) renderNoPRDescriptionPanel(outerW, outerH int, active bool) string {
 	innerW, innerH := panelInnerSize(outerW, outerH)
 
 	tabs := []string{"Description", "Comments"}
-	title := renderPanelTitle(panelDescNoPR+1, "Description", active)
-	tabBar := renderPanelTabs(tabs, m.descTabIndex, innerW)
-	divider := panelDivider(innerW)
-
-	content := lipgloss.JoinVertical(lipgloss.Left,
-		title,
-		tabBar,
-		divider,
-		m.descViewport.View(),
-	)
+	content := renderPanelScaffold(panelDescNoPR+1, "Description", active, tabs, m.descTabIndex, innerW, m.descViewport.View())
 
 	style := panelInactiveStyle
 	if active {
@@ -416,16 +441,7 @@ func (m DetailModel) renderCenterPanel(outerW, outerH int, active bool) string {
 	innerW, innerH := panelInnerSize(outerW, outerH)
 
 	tabs := []string{"Files", "Diff", "Jira Description"}
-	title := renderPanelTitle(3, "Changes", active)
-	tabBar := renderPanelTabs(tabs, m.centerTabIndex, innerW)
-	divider := panelDivider(innerW)
-
-	content := lipgloss.JoinVertical(lipgloss.Left,
-		title,
-		tabBar,
-		divider,
-		m.centerViewport.View(),
-	)
+	content := renderPanelScaffold(3, "Changes", active, tabs, m.centerTabIndex, innerW, m.centerViewport.View())
 
 	style := panelInactiveStyle
 	if active {
@@ -438,16 +454,7 @@ func (m DetailModel) renderRightPanel(outerW, outerH int, active bool) string {
 	innerW, innerH := panelInnerSize(outerW, outerH)
 
 	tabs := []string{"PR Comments", "Jira Comments", "Jira History"}
-	title := renderPanelTitle(4, "Discussion", active)
-	tabBar := renderPanelTabs(tabs, m.rightTabIndex, innerW)
-	divider := panelDivider(innerW)
-
-	content := lipgloss.JoinVertical(lipgloss.Left,
-		title,
-		tabBar,
-		divider,
-		m.rightViewport.View(),
-	)
+	content := renderPanelScaffold(4, "Discussion", active, tabs, m.rightTabIndex, innerW, m.rightViewport.View())
 
 	style := panelInactiveStyle
 	if active {
