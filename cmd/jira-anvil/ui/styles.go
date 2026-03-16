@@ -204,6 +204,18 @@ func wrapPanel(content string, active bool, outerW, outerH int) string {
 	return style.Width(innerW).Height(innerH).Render(content)
 }
 
+func panelInnerSize(outerW, outerH int) (innerW, innerH int) {
+	frameW := panelInactiveStyle.GetHorizontalFrameSize()
+	frameH := panelInactiveStyle.GetVerticalFrameSize()
+	innerW = maxInt(1, outerW-frameW)
+	innerH = maxInt(1, outerH-frameH)
+	return
+}
+
+func panelDivider(innerW int) string {
+	return strings.Repeat("─", maxInt(1, innerW-2))
+}
+
 // TruncateString truncates a string to maxLen, adding ellipsis if needed.
 func TruncateString(s string, maxLen int) string {
 	if maxLen <= 0 {

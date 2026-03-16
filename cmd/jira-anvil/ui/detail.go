@@ -197,17 +197,17 @@ func layoutForPR(totalW, totalH int) detailLayout {
 func (m DetailModel) setSize(w, h int) DetailModel {
 	m.width = w
 	m.height = h
+	rects := computeDetailRects(w, h, m.hasPR)
 
 	if !m.hasPR {
-		leftW, rightW := noPRColumnWidths(w)
-		leftH := maxInt(2, h-1)
-		issueVpH := maxInt(1, leftH-5)
-		m.issueViewport.Width = maxInt(1, leftW-4)
+		leftInnerW, leftInnerH := panelInnerSize(rects.Issue.W, rects.Issue.H)
+		issueVpH := maxInt(1, leftInnerH-2)
+		m.issueViewport.Width = leftInnerW
 		m.issueViewport.Height = issueVpH
 
-		rightH := maxInt(2, h-1)
-		descVpH := maxInt(1, rightH-5) // innerH-3(title/tab/divider)
-		m.descViewport.Width = maxInt(1, rightW-4)
+		rightInnerW, rightInnerH := panelInnerSize(rects.Desc.W, rects.Desc.H)
+		descVpH := maxInt(1, rightInnerH-3) // title + tabs + divider
+		m.descViewport.Width = rightInnerW
 		m.descViewport.Height = descVpH
 		if m.issue != nil {
 			m.refreshIssueViewport()
@@ -216,22 +216,23 @@ func (m DetailModel) setSize(w, h int) DetailModel {
 		return m
 	}
 
-	l := layoutForPR(w, h)
-	issueVpH := maxInt(1, l.leftTopH-5)
-	m.issueViewport.Width = maxInt(1, l.leftW-4)
+	leftTopInnerW, leftTopInnerH := panelInnerSize(rects.Issue.W, rects.Issue.H)
+	issueVpH := maxInt(1, leftTopInnerH-2)
+	m.issueViewport.Width = leftTopInnerW
 	m.issueViewport.Height = issueVpH
 
-	prInfoVpH := maxInt(1, l.leftBottomH-5)
-	m.prInfoViewport.Width = maxInt(1, l.leftW-4)
+	leftBottomInnerW, leftBottomInnerH := panelInnerSize(rects.PR.W, rects.PR.H)
+	prInfoVpH := maxInt(1, leftBottomInnerH-2)
+	m.prInfoViewport.Width = leftBottomInnerW
 	m.prInfoViewport.Height = prInfoVpH
 
-	centerInnerW := maxInt(1, l.centerW-4)
-	centerVpH := maxInt(1, l.colH-5)
+	centerInnerW, centerInnerH := panelInnerSize(rects.Center.W, rects.Center.H)
+	centerVpH := maxInt(1, centerInnerH-3)
 	m.centerViewport.Width = centerInnerW
 	m.centerViewport.Height = centerVpH
 
-	rightInnerW := maxInt(1, l.rightW-4)
-	rightVpH := maxInt(1, l.colH-5)
+	rightInnerW, rightInnerH := panelInnerSize(rects.Right.W, rects.Right.H)
+	rightVpH := maxInt(1, rightInnerH-3)
 	m.rightViewport.Width = rightInnerW
 	m.rightViewport.Height = rightVpH
 
@@ -242,7 +243,7 @@ func (m DetailModel) setSize(w, h int) DetailModel {
 		m.refreshRightViewport()
 	}
 	if m.hasPR {
-		m.prModel = m.prModel.setSize(w, h, l.leftBottomH)
+		m.prModel = m.prModel.setSize(w, h, rects.PR.H)
 	}
 	return m
 }
@@ -290,37 +291,34 @@ func (m DetailModel) view() string {
 			keyStyle.Render("o") + " browser  " +
 			keyStyle.Render("q") + " back",
 	)
+	rects := computeDetailRects(m.width, m.height, m.hasPR)
 
 	if !m.hasPR {
-		leftW, rightW := noPRColumnWidths(m.width)
-		h := maxInt(2, m.height-1)
-		issuePanel := m.renderIssueInfoPanel(leftW, h, m.focusedPanel == panelIssueInfo)
-		descPanel := m.renderNoPRDescriptionPanel(rightW, h, m.focusedPanel == panelDescNoPR)
+		issuePanel := m.renderIssueInfoPanel(rects.Issue.W, rects.Issue.H, m.focusedPanel == panelIssueInfo)
+		descPanel := m.renderNoPRDescriptionPanel(rects.Desc.W, rects.Desc.H, m.focusedPanel == panelDescNoPR)
 
-		leftLines := normalizeBlock(issuePanel, leftW, h)
-		rightLines := normalizeBlock(descPanel, rightW, h)
-		rowLines := make([]string, h)
-		for i := 0; i < h; i++ {
+		leftLines := normalizeBlock(issuePanel, rects.Issue.W, rects.Issue.H)
+		rightLines := normalizeBlock(descPanel, rects.Desc.W, rects.Desc.H)
+		rowLines := make([]string, rects.Issue.H)
+		for i := 0; i < rects.Issue.H; i++ {
 			rowLines[i] = leftLines[i] + " " + rightLines[i]
 		}
 		row := strings.Join(rowLines, "\n")
 		return lipgloss.JoinVertical(lipgloss.Left, row, helpBar)
 	}
 
-	l := layoutForPR(m.width, m.height)
-
-	issuePanel := m.renderIssueInfoPanel(l.leftW, l.leftTopH, m.focusedPanel == panelIssueInfo)
-	prPanel := m.renderPRInfoPanel(l.leftW, l.leftBottomH, m.focusedPanel == panelPRInfo)
+	issuePanel := m.renderIssueInfoPanel(rects.Issue.W, rects.Issue.H, m.focusedPanel == panelIssueInfo)
+	prPanel := m.renderPRInfoPanel(rects.PR.W, rects.PR.H, m.focusedPanel == panelPRInfo)
 	leftCol := lipgloss.JoinVertical(lipgloss.Left, issuePanel, prPanel)
 
-	centerPanel := m.renderCenterPanel(l.centerW, l.colH, m.focusedPanel == panelCenter)
-	rightPanel := m.renderRightPanel(l.rightW, l.colH, m.focusedPanel == panelRight)
+	centerPanel := m.renderCenterPanel(rects.Center.W, rects.Center.H, m.focusedPanel == panelCenter)
+	rightPanel := m.renderRightPanel(rects.Right.W, rects.Right.H, m.focusedPanel == panelRight)
 
-	leftColLines := normalizeBlock(leftCol, l.leftW, l.colH)
-	centerLines := normalizeBlock(centerPanel, l.centerW, l.colH)
-	rightLines := normalizeBlock(rightPanel, l.rightW, l.colH)
-	rowLines := make([]string, l.colH)
-	for i := 0; i < l.colH; i++ {
+	leftColLines := normalizeBlock(leftCol, rects.Issue.W, rects.Center.H)
+	centerLines := normalizeBlock(centerPanel, rects.Center.W, rects.Center.H)
+	rightLines := normalizeBlock(rightPanel, rects.Right.W, rects.Right.H)
+	rowLines := make([]string, rects.Center.H)
+	for i := 0; i < rects.Center.H; i++ {
 		rowLines[i] = leftColLines[i] + " " + centerLines[i] + " " + rightLines[i]
 	}
 	row := strings.Join(rowLines, "\n")
@@ -328,18 +326,17 @@ func (m DetailModel) view() string {
 }
 
 func (m DetailModel) renderIssueInfoPanel(outerW, outerH int, active bool) string {
-	innerW := maxInt(1, outerW-4)
+	innerW, innerH := panelInnerSize(outerW, outerH)
 
 	var sb strings.Builder
 	sb.WriteString(renderPanelTitle(1, "Issue Info", active) + "\n")
-	sb.WriteString(strings.Repeat("─", innerW) + "\n")
+	sb.WriteString(panelDivider(innerW) + "\n")
 	sb.WriteString(m.issueViewport.View())
 
 	style := panelInactiveStyle
 	if active {
 		style = panelActiveStyle
 	}
-	innerH := maxInt(1, outerH-2)
 	return style.Width(innerW).Height(innerH).Render(sb.String())
 }
 
@@ -379,12 +376,11 @@ func renderIssueInfoContent(issue *api.Issue, innerW int) string {
 }
 
 func (m DetailModel) renderPRInfoPanel(outerW, outerH int, active bool) string {
-	innerW := maxInt(1, outerW-4)
-	innerH := maxInt(1, outerH-2)
+	innerW, innerH := panelInnerSize(outerW, outerH)
 
 	var sb strings.Builder
 	sb.WriteString(renderPanelTitle(2, "Pull Request", active) + "\n")
-	sb.WriteString(strings.Repeat("─", innerW) + "\n")
+	sb.WriteString(panelDivider(innerW) + "\n")
 	sb.WriteString(m.prInfoViewport.View())
 
 	style := panelInactiveStyle
@@ -395,13 +391,12 @@ func (m DetailModel) renderPRInfoPanel(outerW, outerH int, active bool) string {
 }
 
 func (m DetailModel) renderNoPRDescriptionPanel(outerW, outerH int, active bool) string {
-	innerW := maxInt(1, outerW-4)
-	innerH := maxInt(1, outerH-2)
+	innerW, innerH := panelInnerSize(outerW, outerH)
 
 	tabs := []string{"Description", "Comments"}
 	title := renderPanelTitle(panelDescNoPR+1, "Description", active)
 	tabBar := renderPanelTabs(tabs, m.descTabIndex, innerW)
-	divider := strings.Repeat("─", innerW)
+	divider := panelDivider(innerW)
 
 	content := lipgloss.JoinVertical(lipgloss.Left,
 		title,
@@ -418,13 +413,12 @@ func (m DetailModel) renderNoPRDescriptionPanel(outerW, outerH int, active bool)
 }
 
 func (m DetailModel) renderCenterPanel(outerW, outerH int, active bool) string {
-	innerW := maxInt(1, outerW-4)
-	innerH := maxInt(1, outerH-2)
+	innerW, innerH := panelInnerSize(outerW, outerH)
 
 	tabs := []string{"Files", "Diff", "Jira Description"}
 	title := renderPanelTitle(3, "Changes", active)
 	tabBar := renderPanelTabs(tabs, m.centerTabIndex, innerW)
-	divider := strings.Repeat("─", innerW)
+	divider := panelDivider(innerW)
 
 	content := lipgloss.JoinVertical(lipgloss.Left,
 		title,
@@ -441,13 +435,12 @@ func (m DetailModel) renderCenterPanel(outerW, outerH int, active bool) string {
 }
 
 func (m DetailModel) renderRightPanel(outerW, outerH int, active bool) string {
-	innerW := maxInt(1, outerW-4)
-	innerH := maxInt(1, outerH-2)
+	innerW, innerH := panelInnerSize(outerW, outerH)
 
 	tabs := []string{"PR Comments", "Jira Comments", "Jira History"}
 	title := renderPanelTitle(4, "Discussion", active)
 	tabBar := renderPanelTabs(tabs, m.rightTabIndex, innerW)
-	divider := strings.Repeat("─", innerW)
+	divider := panelDivider(innerW)
 
 	content := lipgloss.JoinVertical(lipgloss.Left,
 		title,
@@ -485,16 +478,16 @@ func renderCommentsContent(issue *api.Issue, width int) string {
 	}
 
 	var sb strings.Builder
+	metaW := maxInt(1, width-2)
 	for _, comment := range issue.Fields.Comment.Comments {
 		author := "Unknown"
 		if comment.Author != nil {
 			author = comment.Author.DisplayName
 		}
-		meta := fmt.Sprintf("%s  ·  %s",
-			commentMetaStyle.Render(author),
-			commentMetaStyle.Render(formatTime(comment.Created.Time)),
-		)
-		sb.WriteString("  " + meta + "\n")
+		meta := fmt.Sprintf("%s  ·  %s", author, formatTime(comment.Created.Time))
+		for _, line := range wrapLine(meta, metaW) {
+			sb.WriteString("  " + commentMetaStyle.Render(line) + "\n")
+		}
 
 		body := strings.TrimSpace(adf.Render(comment.Body))
 		if body != "" {
@@ -530,8 +523,10 @@ func renderJiraHistoryContent(issue *api.Issue, width int) string {
 			continue
 		}
 
-		meta := fmt.Sprintf("  %s  ·  %s", commentMetaStyle.Render(author), commentMetaStyle.Render(timeLabel))
-		sb.WriteString(meta + "\n")
+		meta := fmt.Sprintf("%s  ·  %s", author, timeLabel)
+		for _, line := range wrapLine(meta, maxInt(1, width-2)) {
+			sb.WriteString("  " + commentMetaStyle.Render(line) + "\n")
+		}
 		for _, item := range prioritized {
 			fromVal := normalizeHistoryValue(item.FromString)
 			toVal := normalizeHistoryValue(item.ToString)
@@ -597,8 +592,8 @@ func normalizeHistoryValue(v string) string {
 }
 
 func (m *DetailModel) refreshNoPRDescViewport() {
-	_, rightW := noPRColumnWidths(m.width)
-	innerW := maxInt(1, rightW-4)
+	rects := computeDetailRects(m.width, m.height, false)
+	innerW, _ := panelInnerSize(rects.Desc.W, rects.Desc.H)
 	if m.descTabIndex == 0 {
 		m.descViewport.SetContent(renderDescContent(m.issue, innerW))
 	} else {
@@ -620,8 +615,8 @@ func (m *DetailModel) refreshPRInfoViewport() {
 }
 
 func (m *DetailModel) refreshCenterViewport() {
-	l := layoutForPR(m.width, m.height)
-	innerW := maxInt(1, l.centerW-4)
+	rects := computeDetailRects(m.width, m.height, true)
+	innerW, _ := panelInnerSize(rects.Center.W, rects.Center.H)
 	if m.prModel.loading && m.centerTabIndex != 2 {
 		m.centerViewport.SetContent(lipgloss.NewStyle().Foreground(colorMuted).Render("Loading pull request data..."))
 		m.centerViewport.GotoTop()
@@ -644,8 +639,8 @@ func (m *DetailModel) refreshCenterViewport() {
 }
 
 func (m *DetailModel) refreshRightViewport() {
-	l := layoutForPR(m.width, m.height)
-	innerW := maxInt(1, l.rightW-4)
+	rects := computeDetailRects(m.width, m.height, true)
+	innerW, _ := panelInnerSize(rects.Right.W, rects.Right.H)
 	if m.prModel.loading && m.rightTabIndex == 0 {
 		m.rightViewport.SetContent(lipgloss.NewStyle().Foreground(colorMuted).Render("Loading pull request data..."))
 		m.rightViewport.GotoTop()
@@ -801,7 +796,11 @@ func normalizeBlock(block string, width, height int) []string {
 	lines := make([]string, height)
 	for i := 0; i < height; i++ {
 		if i < len(raw) {
-			lines[i] = padToWidth(raw[i], width)
+			line := raw[i]
+			if !strings.Contains(line, "\x1b[") && lipgloss.Width(line) > width {
+				line = cutToWidth(line, width)
+			}
+			lines[i] = padToWidth(line, width)
 		} else {
 			lines[i] = strings.Repeat(" ", width)
 		}

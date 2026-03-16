@@ -111,18 +111,11 @@ func (m PRDetailModel) updateFilesViewport(msg tea.Msg) (PRDetailModel, tea.Cmd)
 
 // renderOverviewPanel renders the compact PR overview for the left-bottom panel.
 func (m PRDetailModel) renderOverviewPanel(outerW, outerH int, active bool) string {
-	innerW := outerW - 4
-	innerH := outerH - 2
-	if innerW < 1 {
-		innerW = 1
-	}
-	if innerH < 1 {
-		innerH = 1
-	}
+	innerW, innerH := panelInnerSize(outerW, outerH)
 
 	var sb strings.Builder
 	sb.WriteString(renderPanelTitle(2, "Pull Request", active) + "\n")
-	sb.WriteString(strings.Repeat("─", innerW) + "\n")
+	sb.WriteString(panelDivider(innerW) + "\n")
 	sb.WriteString(m.renderOverviewContent(innerW))
 
 	style := panelInactiveStyle
@@ -183,19 +176,12 @@ func (m PRDetailModel) renderOverviewContent(innerW int) string {
 
 // renderFilesPanel renders the PR files/diff/comments panel (right-bottom).
 func (m PRDetailModel) renderFilesPanel(outerW, outerH int, active bool) string {
-	innerW := outerW - 4
-	innerH := outerH - 2
-	if innerW < 1 {
-		innerW = 1
-	}
-	if innerH < 1 {
-		innerH = 1
-	}
+	innerW, innerH := panelInnerSize(outerW, outerH)
 
 	tabs := []string{"Files", "Diff", "Comments"}
 	title := renderPanelTitle(4, "PR Files", active)
 	tabBar := renderPanelTabs(tabs, m.filesTabIndex, innerW)
-	divider := strings.Repeat("─", innerW)
+	divider := panelDivider(innerW)
 
 	var vpContent string
 	if m.loading {
