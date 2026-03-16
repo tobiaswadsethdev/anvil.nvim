@@ -178,12 +178,7 @@ func renderPanelTabs(tabs []string, activeTab int, width int) string {
 		}
 	}
 	bar := lipgloss.JoinHorizontal(lipgloss.Top, parts...)
-	barW := lipgloss.Width(bar)
-	if width > barW {
-		filler := lipgloss.NewStyle().Render(strings.Repeat(" ", width-barW))
-		bar += filler
-	}
-	return bar
+	return lipgloss.NewStyle().Width(width).MaxWidth(width).Render(bar)
 }
 
 // wrapPanel wraps content in an active or inactive bordered panel of the given outer width/height.
@@ -222,7 +217,7 @@ func renderPanelScaffold(num int, title string, active bool, tabs []string, acti
 		bodyHeaderH = 3 // title + tabs + divider
 	}
 	bodyH := maxInt(1, innerH-bodyHeaderH)
-	body = strings.Join(normalizeBlock(body, maxInt(1, innerW), bodyH), "\n")
+	body = lipgloss.NewStyle().Width(innerW).MaxWidth(innerW).Height(bodyH).MaxHeight(bodyH).Render(body)
 
 	parts := []string{renderPanelTitle(num, title, active)}
 	if len(tabs) > 0 {
