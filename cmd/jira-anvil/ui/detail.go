@@ -414,7 +414,7 @@ func (m DetailModel) renderIssueInfoPanel(outerW, outerH int, active bool) strin
 	if active {
 		style = panelActiveStyle
 	}
-	return style.Width(innerW).MaxWidth(innerW).Height(innerH).MaxHeight(innerH).Render(content)
+	return style.Width(innerW).Height(innerH).Render(content)
 }
 
 func renderIssueInfoContent(issue *api.Issue, innerW int) string {
@@ -460,7 +460,7 @@ func (m DetailModel) renderPRInfoPanel(outerW, outerH int, active bool) string {
 	if active {
 		style = panelActiveStyle
 	}
-	return style.Width(innerW).MaxWidth(innerW).Height(innerH).MaxHeight(innerH).Render(content)
+	return style.Width(innerW).Height(innerH).Render(content)
 }
 
 func (m DetailModel) renderNoPRDescriptionPanel(outerW, outerH int, active bool) string {
@@ -473,7 +473,7 @@ func (m DetailModel) renderNoPRDescriptionPanel(outerW, outerH int, active bool)
 	if active {
 		style = panelActiveStyle
 	}
-	return style.Width(innerW).MaxWidth(innerW).Height(innerH).MaxHeight(innerH).Render(content)
+	return style.Width(innerW).Height(innerH).Render(content)
 }
 
 func (m DetailModel) renderCenterPanel(outerW, outerH int, active bool) string {
@@ -486,7 +486,7 @@ func (m DetailModel) renderCenterPanel(outerW, outerH int, active bool) string {
 	if active {
 		style = panelActiveStyle
 	}
-	return style.Width(innerW).MaxWidth(innerW).Height(innerH).MaxHeight(innerH).Render(content)
+	return style.Width(innerW).Height(innerH).Render(content)
 }
 
 func (m DetailModel) renderRightPanel(outerW, outerH int, active bool) string {
@@ -499,7 +499,7 @@ func (m DetailModel) renderRightPanel(outerW, outerH int, active bool) string {
 	if active {
 		style = panelActiveStyle
 	}
-	return style.Width(innerW).MaxWidth(innerW).Height(innerH).MaxHeight(innerH).Render(content)
+	return style.Width(innerW).Height(innerH).Render(content)
 }
 
 func renderDescContent(issue *api.Issue, width int) string {
