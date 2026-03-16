@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/charmbracelet/bubbles/viewport"
@@ -21,6 +22,26 @@ const (
 	panelRight     = 3
 	panelDescNoPR  = 1
 )
+
+// glamourRenderer is a package-level glamour renderer built once and reused.
+// Width is handled at render time via WithWordWrap, not here.
+var (
+	glamourRendererOnce sync.Once
+	glamourRenderer     *glamour.TermRenderer
+)
+
+func getGlamourRenderer() *glamour.TermRenderer {
+	glamourRendererOnce.Do(func() {
+		r, err := glamour.NewTermRenderer(
+			glamour.WithAutoStyle(),
+			glamour.WithWordWrap(0), // we'll trim/wrap ourselves; 0 = no wrapping
+		)
+		if err == nil {
+			glamourRenderer = r
+		}
+	})
+	return glamourRenderer
+}
 
 type DetailModel struct {
 	issue          *api.Issue
@@ -42,6 +63,10 @@ type DetailModel struct {
 
 	width  int
 	height int
+
+	// Cached glamour-rendered description, keyed by render width.
+	descMDCacheWidth int
+	descMDCache      string
 }
 
 type detailLayout struct {
@@ -493,30 +518,50 @@ func renderDescContent(issue *api.Issue, width int) string {
 	return sb.String()
 }
 
-func renderDescContentMarkdown(issue *api.Issue, width int) string {
-	if issue.Fields.Description == nil {
+// renderDescContentMarkdown renders the issue description as styled Markdown.
+// It uses a package-level singleton glamour renderer and caches the result on
+// the DetailModel (via the pointer receiver callers) so it is only re-rendered
+// when the viewport width changes.
+func (m *DetailModel) renderDescContentMarkdown(width int) string {
+	if m.issue.Fields.Description == nil {
 		return lipgloss.NewStyle().Foreground(colorMuted).Render("  (no description)")
 	}
 
-	md := strings.TrimSpace(adf.ToMarkdown(issue.Fields.Description))
+	// Return cached result if width hasn't changed.
+	if m.descMDCache != "" && m.descMDCacheWidth == width {
+		return m.descMDCache
+	}
+
+	md := strings.TrimSpace(adf.ToMarkdown(m.issue.Fields.Description))
 	if md == "" {
 		return lipgloss.NewStyle().Foreground(colorMuted).Render("  (no description)")
 	}
 
-	r, err := glamour.NewTermRenderer(
+	r := getGlamourRenderer()
+	if r == nil {
+		return renderDescContent(m.issue, width)
+	}
+
+	// Re-render with desired word-wrap width by creating a width-specific
+	// renderer. We only reach here when width changes (rare), so the cost
+	// of constructing one here is acceptable.
+	wr, err := glamour.NewTermRenderer(
 		glamour.WithAutoStyle(),
 		glamour.WithWordWrap(maxInt(20, width-2)),
 	)
 	if err != nil {
-		return renderDescContent(issue, width)
+		return renderDescContent(m.issue, width)
 	}
 
-	out, err := r.Render(md)
+	out, err := wr.Render(md)
 	if err != nil {
-		return renderDescContent(issue, width)
+		return renderDescContent(m.issue, width)
 	}
 
-	return strings.TrimRight(out, "\n")
+	result := strings.TrimRight(out, "\n")
+	m.descMDCache = result
+	m.descMDCacheWidth = width
+	return result
 }
 
 func renderCommentsContent(issue *api.Issue, width int) string {
@@ -642,7 +687,7 @@ func (m *DetailModel) refreshNoPRDescViewport() {
 	rects := computeDetailRects(m.width, m.height, false)
 	innerW, _ := panelInnerSize(rects.Desc.W, rects.Desc.H)
 	if m.descTabIndex == 0 {
-		m.descViewport.SetContent(renderDescContentMarkdown(m.issue, innerW))
+		m.descViewport.SetContent(m.renderDescContentMarkdown(innerW))
 	} else {
 		m.descViewport.SetContent(renderCommentsContent(m.issue, innerW))
 	}
@@ -680,7 +725,7 @@ func (m *DetailModel) refreshCenterViewport() {
 	case 1:
 		m.centerViewport.SetContent(renderDiffTab(m.prModel.fileDiffs))
 	default:
-		m.centerViewport.SetContent(renderDescContentMarkdown(m.issue, innerW))
+		m.centerViewport.SetContent(m.renderDescContentMarkdown(innerW))
 	}
 	m.centerViewport.GotoTop()
 }
