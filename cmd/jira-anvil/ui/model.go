@@ -129,11 +129,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.detail.prModel = m.detail.prModel.setData(msg.pr, msg.build, msg.fileDiffs, msg.reviewers, msg.threads)
 		}
+		if m.detail.hasPR {
+			m.detail.refreshCenterViewport()
+			m.detail.refreshRightViewport()
+		}
 		return m, nil
 
 	case prThreadsFetchedMsg:
 		if msg.err == nil {
 			m.detail.prModel = m.detail.prModel.setThreads(msg.threads)
+			if m.detail.hasPR {
+				m.detail.refreshRightViewport()
+			}
 		}
 		return m, nil
 
@@ -357,8 +364,9 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, startEditCmd(m.detail.issue, m.client)
 	case "c":
 		// If PR panel is focused and PR data is loaded, open PR comment modal
-		if m.detail.hasPR && m.detail.prModel.pr != nil &&
-			(m.detail.focusedPanel == panelPROverview || m.detail.focusedPanel == panelPRFiles) {
+		isPRContext := m.detail.focusedPanel == panelPRInfo || m.detail.focusedPanel == panelCenter ||
+			(m.detail.focusedPanel == panelRight && m.detail.rightTabIndex == 0)
+		if m.detail.hasPR && m.detail.prModel.pr != nil && isPRContext {
 			filePaths := make([]string, 0, len(m.detail.prModel.fileDiffs))
 			for _, fd := range m.detail.prModel.fileDiffs {
 				filePaths = append(filePaths, fd.Path)
@@ -404,17 +412,24 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // detailNextTab advances (or reverses) the tab within the currently focused panel.
 func (m Model) detailNextTab(dir int) DetailModel {
 	d := m.detail
-	switch d.focusedPanel {
-	case d.descPanelIdx():
-		tabs := 2 // Description | Comments
-		d.descTabIndex = (d.descTabIndex + dir + tabs) % tabs
-		d.refreshDescViewport()
-	case panelPRFiles:
-		if d.hasPR {
-			tabs := 3 // Files | Diff | Comments
-			d.prModel.filesTabIndex = (d.prModel.filesTabIndex + dir + tabs) % tabs
-			d.prModel.refreshFilesViewport()
+	if !d.hasPR {
+		if d.focusedPanel == panelDescNoPR {
+			tabs := 2 // Description | Comments
+			d.descTabIndex = (d.descTabIndex + dir + tabs) % tabs
+			d.refreshNoPRDescViewport()
 		}
+		return d
+	}
+
+	switch d.focusedPanel {
+	case panelCenter:
+		tabs := 3 // Files | Diff | Jira Description
+		d.centerTabIndex = (d.centerTabIndex + dir + tabs) % tabs
+		d.refreshCenterViewport()
+	case panelRight:
+		tabs := 3 // PR Comments | Jira Comments | Jira History
+		d.rightTabIndex = (d.rightTabIndex + dir + tabs) % tabs
+		d.refreshRightViewport()
 	}
 	return d
 }
@@ -608,4 +623,4 @@ func (m Model) renderOverlay(base, modal string) string {
 
 // Help strings
 const listHelp = "↑/↓: navigate  Enter: open  [/]: cycle filter  r: refresh  n: new issue  o: browser  q: quit"
-const detailHelp = "Tab/S-Tab: panel  1-4: jump  [/]: tab  ↑/↓: scroll  t: transition  c: comment  a: assign  e: edit  v: vote (PR)  y: copy PR link  o: browser  q: back"
+const detailHelp = "Tab/S-Tab: panel  1-4: jump  [/]: tab  ↑/↓: scroll  t: transition  c: comment (Jira/PR)  a: assign  e: edit  v: vote (PR)  y: copy PR link  o: browser  q: back"

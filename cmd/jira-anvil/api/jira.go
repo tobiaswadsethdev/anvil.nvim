@@ -59,10 +59,11 @@ func (jt *JiraTime) UnmarshalJSON(b []byte) error {
 }
 
 type Issue struct {
-	ID     string      `json:"id"`
-	Key    string      `json:"key"`
-	Self   string      `json:"self"`
-	Fields IssueFields `json:"fields"`
+	ID        string          `json:"id"`
+	Key       string          `json:"key"`
+	Self      string          `json:"self"`
+	Fields    IssueFields     `json:"fields"`
+	Changelog *IssueChangelog `json:"changelog,omitempty"`
 }
 
 type IssueFields struct {
@@ -74,13 +75,13 @@ type IssueFields struct {
 	Priority struct {
 		Name string `json:"name"`
 	} `json:"priority"`
-	Assignee  *User           `json:"assignee"`
-	Reporter  *User           `json:"reporter"`
-	Created   JiraTime        `json:"created"`
-	Updated   JiraTime        `json:"updated"`
-	Comment   *CommentPage    `json:"comment"`
-	Labels    []string        `json:"labels"`
-	Custom    map[string]json.RawMessage `json:"-"` // populated by UnmarshalCustomFields
+	Assignee *User                      `json:"assignee"`
+	Reporter *User                      `json:"reporter"`
+	Created  JiraTime                   `json:"created"`
+	Updated  JiraTime                   `json:"updated"`
+	Comment  *CommentPage               `json:"comment"`
+	Labels   []string                   `json:"labels"`
+	Custom   map[string]json.RawMessage `json:"-"` // populated by UnmarshalCustomFields
 }
 
 type User struct {
@@ -100,6 +101,25 @@ type Comment struct {
 	Body    json.RawMessage `json:"body"` // ADF JSON
 	Created JiraTime        `json:"created"`
 	Updated JiraTime        `json:"updated"`
+}
+
+type IssueChangelog struct {
+	Histories []IssueHistory `json:"histories"`
+}
+
+type IssueHistory struct {
+	ID      string             `json:"id"`
+	Author  *User              `json:"author"`
+	Created JiraTime           `json:"created"`
+	Items   []IssueHistoryItem `json:"items"`
+}
+
+type IssueHistoryItem struct {
+	Field      string `json:"field"`
+	From       string `json:"from"`
+	FromString string `json:"fromString"`
+	To         string `json:"to"`
+	ToString   string `json:"toString"`
 }
 
 type Transition struct {
@@ -201,7 +221,7 @@ func (c *Client) GetIssue(key string) (*Issue, error) {
 		}
 	}
 
-	data, err := c.do("GET", "/rest/api/3/issue/"+key+"?fields="+url.QueryEscape(fieldList), nil)
+	data, err := c.do("GET", "/rest/api/3/issue/"+key+"?fields="+url.QueryEscape(fieldList)+"&expand=changelog", nil)
 	if err != nil {
 		return nil, err
 	}

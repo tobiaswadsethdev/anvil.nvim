@@ -6,13 +6,13 @@ A Jira Cloud TUI for Neovim. Browse issues, manage transitions, review pull requ
 
 - **JQL filter cycling** — define named filters and cycle through them with `[` / `]`
 - **Issue list** — table view with key, summary, status, priority, assignee, and age
-- **Issue detail** — lazygit-style multi-panel view: Issue Info, Description/Comments, and (optionally) Pull Request panels
+- **Issue detail** — lazygit-style multi-panel view with a responsive grid: issue metadata, PR overview, changes, and discussion/history
 - **Transitions** — change issue status via modal
 - **Comments** — add comments (Markdown → ADF)
 - **Assign** — fuzzy-search and assign users
 - **Edit** — edit description and ADF custom fields in `$EDITOR`
 - **Browser** — open any issue in the browser with `o`
-- **Azure DevOps PR panels** — linked pull request displayed across two dedicated panels: PR overview (metadata, pipeline, reviewers) and PR Files (files list, diff, and comment threads)
+- **Azure DevOps PR integration** — linked pull request data shown in dedicated overview/changes/discussion panels with Jira context tabs
 - **PR voting** — view reviewer votes and cast your own (Approve / Reject / etc.) via `v`
 - **PR comments** — view existing PR comment threads and add new ones or reply to threads via `c`
 
@@ -156,14 +156,14 @@ When `position = "float"`, setting `rounded = true` draws a rounded border aroun
 
 ### Issue Detail
 
-The detail view uses a **lazygit-style multi-panel layout**. Without Azure DevOps configured there are 2 panels; with it there are 4:
+The detail view uses a **lazygit-style multi-panel layout**. Without Azure DevOps configured there are 2 panels; with it there are 4 panels arranged in a 3-column grid:
 
 | Panel | Label | Contents |
 |-------|-------|----------|
 | `[1]` | Issue Info | Key, status, priority, assignee, reporter, dates, labels |
 | `[2]` | Pull Request | PR status, branches, pipeline, reviewers *(AzDO only)* |
-| `[3]` | Description | Issue description and comments (tabs: `Description` \| `Comments`) |
-| `[4]` | PR Files | Changed files, diff, and PR threads (tabs: `Files` \| `Diff` \| `Comments`) *(AzDO only)* |
+| `[3]` | Changes | PR changed files/diff and Jira description (tabs: `Files` \| `Diff` \| `Jira Description`) *(AzDO only)* |
+| `[4]` | Discussion | PR comments, Jira comments, and Jira history (tabs: `PR Comments` \| `Jira Comments` \| `Jira History`) *(AzDO only)* |
 
 | Key             | Action                                            |
 |-----------------|---------------------------------------------------|
@@ -201,7 +201,7 @@ Create your PAT at `https://dev.azure.com/<org>/_usersSettings/tokens` with at m
 | Code  | Write      | Voting on PRs and adding comments         |
 | Build | Read       | Displaying pipeline build status          |
 
-PR data is displayed across two dedicated panels in the detail view:
+PR and Jira collaboration data is displayed across three dedicated areas in the detail view:
 
 **Panel `[2]` — Pull Request** (left column, compact overview):
 - PR status (Active / Completed / Abandoned), author, and source → target branches
@@ -212,12 +212,17 @@ PR data is displayed across two dedicated panels in the detail view:
   - `⏳` yellow — Waiting for author
   - `○` gray — No vote
 
-**Panel `[4]` — PR Files** (right column, scrollable, 3 tabs):
+**Panel `[3]` — Changes** (middle column, scrollable, 3 tabs):
 - **Files tab** — changed files list with change type indicators (A / M / D / R)
 - **Diff tab** — unified diff with colored `+`/`-` lines and `@@` hunk headers
-- **Comments tab** — PR comment threads numbered `[1]`, `[2]`, ... with author, timestamp, and replies
+- **Jira Description tab** — Jira issue description rendered from ADF
 
-Navigate to a panel with its number key or `Tab`/`Shift+Tab`. Switch between the tabs within panel `[4]` with `[` and `]`.
+**Panel `[4]` — Discussion** (right column, scrollable, 3 tabs):
+- **PR Comments tab** — PR comment threads numbered `[1]`, `[2]`, ... with author, timestamp, and replies
+- **Jira Comments tab** — Jira issue comments (author + relative timestamp)
+- **Jira History tab** — compact changelog entries (`time • author • field: from -> to`) with key fields prioritized
+
+Navigate to a panel with its number key or `Tab`/`Shift+Tab`. Switch between tabs within focused tabbed panels (`[3]` and `[4]`) with `[` and `]`.
 
 ### Voting
 
