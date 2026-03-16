@@ -206,29 +206,30 @@ func (m *PRDetailModel) refreshFilesViewport() {
 func renderFilesContent(tabIndex int, fileDiffs []api.FileDiff, threads []api.PRCommentThread, width int) string {
 	switch tabIndex {
 	case 0:
-		return renderFilesTab(fileDiffs)
+		return renderFilesTab(fileDiffs, width)
 	case 1:
-		return renderDiffTab(fileDiffs)
+		return renderDiffTab(fileDiffs, width)
 	case 2:
 		return renderPRCommentsTab(threads, width)
 	}
 	return ""
 }
 
-func renderFilesTab(fileDiffs []api.FileDiff) string {
+func renderFilesTab(fileDiffs []api.FileDiff, width int) string {
 	if len(fileDiffs) == 0 {
 		return lipgloss.NewStyle().Foreground(colorMuted).Render("  (no changed files)")
 	}
+	pathW := maxInt(1, width-6)
 	var sb strings.Builder
 	for _, fd := range fileDiffs {
 		icon := changeTypeIcon(fd.ChangeType)
-		path := lipgloss.NewStyle().Foreground(colorFg).Render(fd.Path)
+		path := lipgloss.NewStyle().Foreground(colorFg).Render(TruncateString(fd.Path, pathW))
 		sb.WriteString(fmt.Sprintf("  %s  %s\n", icon, path))
 	}
 	return sb.String()
 }
 
-func renderDiffTab(fileDiffs []api.FileDiff) string {
+func renderDiffTab(fileDiffs []api.FileDiff, width int) string {
 	hasDiffs := false
 	for _, fd := range fileDiffs {
 		if len(fd.Hunks) > 0 || fd.Binary {
@@ -245,10 +246,12 @@ func renderDiffTab(fileDiffs []api.FileDiff) string {
 		if len(fd.Hunks) == 0 && !fd.Binary {
 			continue
 		}
+		headerText := "┌ " + changeTypeLabel(fd.ChangeType) + ": " + fd.Path
+		headerW := maxInt(1, width-1)
 		fileHeader := lipgloss.NewStyle().
 			Foreground(colorSecond).
 			Bold(true).
-			Render("┌ " + changeTypeLabel(fd.ChangeType) + ": " + fd.Path)
+			Render(TruncateString(headerText, headerW))
 		sb.WriteString(fileHeader + "\n")
 
 		if fd.Binary {
@@ -256,15 +259,18 @@ func renderDiffTab(fileDiffs []api.FileDiff) string {
 			continue
 		}
 		for _, hunk := range fd.Hunks {
-			sb.WriteString(lipgloss.NewStyle().Foreground(colorSecond).Render(hunk.Header) + "\n")
+			hunkHeaderW := maxInt(1, width)
+			sb.WriteString(lipgloss.NewStyle().Foreground(colorSecond).Render(TruncateString(hunk.Header, hunkHeaderW)) + "\n")
+			lineW := maxInt(1, width-1)
 			for _, line := range hunk.Lines {
+				content := TruncateString(line.Content, lineW)
 				switch line.Type {
 				case "added":
-					sb.WriteString(lipgloss.NewStyle().Foreground(colorGreen).Render("+"+line.Content) + "\n")
+					sb.WriteString(lipgloss.NewStyle().Foreground(colorGreen).Render("+"+content) + "\n")
 				case "deleted":
-					sb.WriteString(lipgloss.NewStyle().Foreground(colorRed).Render("-"+line.Content) + "\n")
+					sb.WriteString(lipgloss.NewStyle().Foreground(colorRed).Render("-"+content) + "\n")
 				default:
-					sb.WriteString(lipgloss.NewStyle().Foreground(colorMuted).Render(" "+line.Content) + "\n")
+					sb.WriteString(lipgloss.NewStyle().Foreground(colorMuted).Render(" "+content) + "\n")
 				}
 			}
 		}

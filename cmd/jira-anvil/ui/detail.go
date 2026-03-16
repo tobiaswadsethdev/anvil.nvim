@@ -721,9 +721,9 @@ func (m *DetailModel) refreshCenterViewport() {
 	}
 	switch m.centerTabIndex {
 	case 0:
-		m.centerViewport.SetContent(renderFilesTab(m.prModel.fileDiffs))
+		m.centerViewport.SetContent(renderFilesTab(m.prModel.fileDiffs, innerW))
 	case 1:
-		m.centerViewport.SetContent(renderDiffTab(m.prModel.fileDiffs))
+		m.centerViewport.SetContent(renderDiffTab(m.prModel.fileDiffs, innerW))
 	default:
 		m.centerViewport.SetContent(m.renderDescContentMarkdown(innerW))
 	}
