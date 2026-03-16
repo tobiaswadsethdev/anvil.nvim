@@ -216,14 +216,24 @@ func layoutForPR(totalW, totalH int) detailLayout {
 	if usableH < 4 {
 		usableH = 4
 	}
-	leftTopH := usableH * 55 / 100
-	if leftTopH < 3 {
-		leftTopH = 3
-	}
-	leftBottomH := usableH - leftTopH
-	if leftBottomH < 2 {
-		leftBottomH = 2
-		leftTopH = usableH - leftBottomH
+	leftTopH := 0
+	leftBottomH := 0
+	if usableH >= 16 {
+		leftTopH = usableH * 55 / 100
+		if leftTopH < 8 {
+			leftTopH = 8
+		}
+		if leftTopH > usableH-8 {
+			leftTopH = usableH - 8
+		}
+		leftBottomH = usableH - leftTopH
+	} else {
+		leftTopH = maxInt(3, usableH/2)
+		leftBottomH = usableH - leftTopH
+		if leftBottomH < 3 {
+			leftBottomH = 3
+			leftTopH = usableH - leftBottomH
+		}
 	}
 
 	return detailLayout{
@@ -321,7 +331,7 @@ func (m DetailModel) view() string {
 		return "Loading..."
 	}
 
-	helpBar := helpStyle.Width(m.width).Render(
+	helpBar := helpStyle.Width(m.width).Height(1).MaxHeight(1).Render(
 		"  " + keyStyle.Render("Tab/S-Tab") + " panel  " +
 			keyStyle.Render("1-"+fmt.Sprintf("%d", m.numPanels())) + " jump  " +
 			keyStyle.Render("[/]") + " tab  " +
