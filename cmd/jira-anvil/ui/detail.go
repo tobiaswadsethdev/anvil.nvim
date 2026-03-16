@@ -218,8 +218,12 @@ func layoutForPR(totalW, totalH int) detailLayout {
 	}
 	leftTopH := 0
 	leftBottomH := 0
-	if usableH >= 16 {
-		leftTopH = usableH * 55 / 100
+	if usableH >= 28 {
+		// Keep issue metadata compact; give most vertical space to PR/changes.
+		leftTopH = 16
+		leftBottomH = usableH - leftTopH
+	} else if usableH >= 16 {
+		leftTopH = usableH * 45 / 100
 		if leftTopH < 8 {
 			leftTopH = 8
 		}
