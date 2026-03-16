@@ -217,7 +217,8 @@ func renderPanelScaffold(num int, title string, active bool, tabs []string, acti
 		bodyHeaderH = 3 // title + tabs + divider
 	}
 	bodyH := maxInt(1, innerH-bodyHeaderH)
-	body = lipgloss.NewStyle().Width(innerW).MaxWidth(innerW).Height(bodyH).MaxHeight(bodyH).Render(body)
+	body = strings.Join(clampBlockHeight(body, bodyH), "\n")
+	body = lipgloss.NewStyle().Width(innerW).MaxWidth(innerW).Render(body)
 
 	parts := []string{renderPanelTitle(num, title, active)}
 	if len(tabs) > 0 {
@@ -226,6 +227,25 @@ func renderPanelScaffold(num int, title string, active bool, tabs []string, acti
 	parts = append(parts, panelDivider(innerW))
 	parts = append(parts, body)
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+}
+
+func clampBlockHeight(block string, height int) []string {
+	if height < 1 {
+		height = 1
+	}
+	raw := strings.Split(block, "\n")
+	for len(raw) > 0 && raw[len(raw)-1] == "" {
+		raw = raw[:len(raw)-1]
+	}
+	lines := make([]string, 0, height)
+	for i := 0; i < height; i++ {
+		if i < len(raw) {
+			lines = append(lines, raw[i])
+		} else {
+			lines = append(lines, "")
+		}
+	}
+	return lines
 }
 
 // TruncateString truncates a string to maxLen, adding ellipsis if needed.
