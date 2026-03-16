@@ -112,7 +112,7 @@ func (m PRDetailModel) updateFilesViewport(msg tea.Msg) (PRDetailModel, tea.Cmd)
 // renderOverviewPanel renders the compact PR overview for the left-bottom panel.
 func (m PRDetailModel) renderOverviewPanel(outerW, outerH int, active bool) string {
 	innerW, innerH := panelInnerSize(outerW, outerH)
-	content := renderPanelScaffold(2, "Pull Request", active, nil, 0, innerW, m.renderOverviewContent(innerW))
+	content := renderPanelScaffold(2, "Pull Request", active, nil, 0, innerW, innerH, m.renderOverviewContent(innerW))
 
 	style := panelInactiveStyle
 	if active {
@@ -182,7 +182,7 @@ func (m PRDetailModel) renderFilesPanel(outerW, outerH int, active bool) string 
 	} else {
 		vpContent = m.filesViewport.View()
 	}
-	content := renderPanelScaffold(4, "PR Files", active, tabs, m.filesTabIndex, innerW, vpContent)
+	content := renderPanelScaffold(4, "PR Files", active, tabs, m.filesTabIndex, innerW, innerH, vpContent)
 
 	style := panelInactiveStyle
 	if active {

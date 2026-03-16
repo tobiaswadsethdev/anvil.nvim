@@ -408,13 +408,13 @@ func (m DetailModel) view() string {
 
 func (m DetailModel) renderIssueInfoPanel(outerW, outerH int, active bool) string {
 	innerW, innerH := panelInnerSize(outerW, outerH)
-	content := renderPanelScaffold(1, "Issue Info", active, nil, 0, innerW, m.issueViewport.View())
+	content := renderPanelScaffold(1, "Issue Info", active, nil, 0, innerW, innerH, m.issueViewport.View())
 
 	style := panelInactiveStyle
 	if active {
 		style = panelActiveStyle
 	}
-	return style.Width(innerW).Height(innerH).Render(content)
+	return style.Width(innerW).MaxWidth(innerW).Height(innerH).MaxHeight(innerH).Render(content)
 }
 
 func renderIssueInfoContent(issue *api.Issue, innerW int) string {
@@ -454,52 +454,52 @@ func renderIssueInfoContent(issue *api.Issue, innerW int) string {
 
 func (m DetailModel) renderPRInfoPanel(outerW, outerH int, active bool) string {
 	innerW, innerH := panelInnerSize(outerW, outerH)
-	content := renderPanelScaffold(2, "Pull Request", active, nil, 0, innerW, m.prInfoViewport.View())
+	content := renderPanelScaffold(2, "Pull Request", active, nil, 0, innerW, innerH, m.prInfoViewport.View())
 
 	style := panelInactiveStyle
 	if active {
 		style = panelActiveStyle
 	}
-	return style.Width(innerW).Height(innerH).Render(content)
+	return style.Width(innerW).MaxWidth(innerW).Height(innerH).MaxHeight(innerH).Render(content)
 }
 
 func (m DetailModel) renderNoPRDescriptionPanel(outerW, outerH int, active bool) string {
 	innerW, innerH := panelInnerSize(outerW, outerH)
 
 	tabs := []string{"Description", "Comments"}
-	content := renderPanelScaffold(panelDescNoPR+1, "Description", active, tabs, m.descTabIndex, innerW, m.descViewport.View())
+	content := renderPanelScaffold(panelDescNoPR+1, "Description", active, tabs, m.descTabIndex, innerW, innerH, m.descViewport.View())
 
 	style := panelInactiveStyle
 	if active {
 		style = panelActiveStyle
 	}
-	return style.Width(innerW).Height(innerH).Render(content)
+	return style.Width(innerW).MaxWidth(innerW).Height(innerH).MaxHeight(innerH).Render(content)
 }
 
 func (m DetailModel) renderCenterPanel(outerW, outerH int, active bool) string {
 	innerW, innerH := panelInnerSize(outerW, outerH)
 
 	tabs := []string{"Files", "Diff", "Jira Description"}
-	content := renderPanelScaffold(3, "Changes", active, tabs, m.centerTabIndex, innerW, m.centerViewport.View())
+	content := renderPanelScaffold(3, "Changes", active, tabs, m.centerTabIndex, innerW, innerH, m.centerViewport.View())
 
 	style := panelInactiveStyle
 	if active {
 		style = panelActiveStyle
 	}
-	return style.Width(innerW).Height(innerH).Render(content)
+	return style.Width(innerW).MaxWidth(innerW).Height(innerH).MaxHeight(innerH).Render(content)
 }
 
 func (m DetailModel) renderRightPanel(outerW, outerH int, active bool) string {
 	innerW, innerH := panelInnerSize(outerW, outerH)
 
 	tabs := []string{"PR Comments", "Jira Comments", "Jira History"}
-	content := renderPanelScaffold(4, "Discussion", active, tabs, m.rightTabIndex, innerW, m.rightViewport.View())
+	content := renderPanelScaffold(4, "Discussion", active, tabs, m.rightTabIndex, innerW, innerH, m.rightViewport.View())
 
 	style := panelInactiveStyle
 	if active {
 		style = panelActiveStyle
 	}
-	return style.Width(innerW).Height(innerH).Render(content)
+	return style.Width(innerW).MaxWidth(innerW).Height(innerH).MaxHeight(innerH).Render(content)
 }
 
 func renderDescContent(issue *api.Issue, width int) string {

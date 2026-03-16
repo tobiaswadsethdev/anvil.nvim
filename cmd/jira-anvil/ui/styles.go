@@ -216,7 +216,14 @@ func panelDivider(innerW int) string {
 	return strings.Repeat("─", maxInt(1, innerW-2))
 }
 
-func renderPanelScaffold(num int, title string, active bool, tabs []string, activeTab int, innerW int, body string) string {
+func renderPanelScaffold(num int, title string, active bool, tabs []string, activeTab int, innerW, innerH int, body string) string {
+	bodyHeaderH := 2 // title + divider
+	if len(tabs) > 0 {
+		bodyHeaderH = 3 // title + tabs + divider
+	}
+	bodyH := maxInt(1, innerH-bodyHeaderH)
+	body = strings.Join(normalizeBlock(body, maxInt(1, innerW), bodyH), "\n")
+
 	parts := []string{renderPanelTitle(num, title, active)}
 	if len(tabs) > 0 {
 		parts = append(parts, renderPanelTabs(tabs, activeTab, innerW))
