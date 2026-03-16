@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/tobiaswadsethdev/anvil.nvim/cmd/jira-anvil/api"
 	"github.com/tobiaswadsethdev/anvil.nvim/cmd/jira-anvil/ui/adf"
@@ -492,6 +493,32 @@ func renderDescContent(issue *api.Issue, width int) string {
 	return sb.String()
 }
 
+func renderDescContentMarkdown(issue *api.Issue, width int) string {
+	if issue.Fields.Description == nil {
+		return lipgloss.NewStyle().Foreground(colorMuted).Render("  (no description)")
+	}
+
+	md := strings.TrimSpace(adf.ToMarkdown(issue.Fields.Description))
+	if md == "" {
+		return lipgloss.NewStyle().Foreground(colorMuted).Render("  (no description)")
+	}
+
+	r, err := glamour.NewTermRenderer(
+		glamour.WithAutoStyle(),
+		glamour.WithWordWrap(maxInt(20, width-2)),
+	)
+	if err != nil {
+		return renderDescContent(issue, width)
+	}
+
+	out, err := r.Render(md)
+	if err != nil {
+		return renderDescContent(issue, width)
+	}
+
+	return strings.TrimRight(out, "\n")
+}
+
 func renderCommentsContent(issue *api.Issue, width int) string {
 	if issue.Fields.Comment == nil || len(issue.Fields.Comment.Comments) == 0 {
 		return lipgloss.NewStyle().Foreground(colorMuted).Render("  (no comments)")
@@ -615,7 +642,7 @@ func (m *DetailModel) refreshNoPRDescViewport() {
 	rects := computeDetailRects(m.width, m.height, false)
 	innerW, _ := panelInnerSize(rects.Desc.W, rects.Desc.H)
 	if m.descTabIndex == 0 {
-		m.descViewport.SetContent(renderDescContent(m.issue, innerW))
+		m.descViewport.SetContent(renderDescContentMarkdown(m.issue, innerW))
 	} else {
 		m.descViewport.SetContent(renderCommentsContent(m.issue, innerW))
 	}
@@ -653,7 +680,7 @@ func (m *DetailModel) refreshCenterViewport() {
 	case 1:
 		m.centerViewport.SetContent(renderDiffTab(m.prModel.fileDiffs))
 	default:
-		m.centerViewport.SetContent(renderDescContent(m.issue, innerW))
+		m.centerViewport.SetContent(renderDescContentMarkdown(m.issue, innerW))
 	}
 	m.centerViewport.GotoTop()
 }
