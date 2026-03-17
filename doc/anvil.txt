@@ -14,9 +14,10 @@ CONTENTS                                                        *anvil-contents*
   5. Window layouts ............ |anvil-window|
   6. Usage ..................... |anvil-usage|
   7. Keybindings ............... |anvil-keybindings|
-  8. Azure DevOps .............. |anvil-azdo|
-  9. Commands .................. |anvil-commands|
-  10. Health check .............. |anvil-health|
+  8. Create issue .............. |anvil-create|
+  9. Azure DevOps .............. |anvil-azdo|
+  10. Commands .................. |anvil-commands|
+  11. Health check .............. |anvil-health|
 
 ==============================================================================
 INTRODUCTION                                                       *anvil-intro*
@@ -29,13 +30,16 @@ required.
 Features:
   • Browse issues via named JQL filters (cycle with [ / ])
   • Issue detail view — lazygit-style multi-panel layout with bordered boxes
+  • Create issues — multi-step flow: project picker → issue type picker →
+    YAML template in $EDITOR (press n from the issue list)
   • Transition issue status
   • Add comments (Markdown → ADF)
   • Assign issues to team members
   • Edit description and ADF custom fields in $EDITOR
   • Open issues in browser
-  • Azure DevOps PR panels — PR overview (metadata, pipeline, reviewers) and
-    PR Files (files, diff, comments) as dedicated panels in the detail view
+  • Azure DevOps PR panels — PR overview (metadata, pipeline, reviewers),
+    Changes (files, diff, Jira description), and Discussion (PR comments,
+    Jira comments, Jira history) as dedicated panels in the detail view
   • PR voting — cast Approve / Reject / etc. via v
   • PR comments — view, add, and reply to PR comment threads
   • Flexible window layouts: floating, right split, or bottom split
@@ -192,6 +196,7 @@ Issue List view:~
   ↑ / k       Move cursor up
   ↓ / j       Move cursor down
   Enter       Open issue detail
+  n           Create new issue (see |anvil-create|)
   r           Refresh issues
   o           Open issue in browser
   ?           Show help
@@ -203,9 +208,14 @@ configured there are 2 panels; with it there are 4:
 
   [1]  Issue Info     — key, status, priority, assignee, reporter, dates
   [2]  Pull Request   — PR status, branches, pipeline, reviewers (AzDO only)
-  [3]  Description    — description + comments (tabs: Description | Comments)
-  [4]  PR Files       — files, diff, PR threads (tabs: Files | Diff | Comments)
+  [3]  Changes        — files, diff, Jira description
+                        (tabs: Files | Diff | Jira Description) (AzDO only)
+  [4]  Discussion     — PR comments, Jira comments, and Jira history
+                        (tabs: PR Comments | Jira Comments | Jira History)
                         (AzDO only)
+
+Without AzDO, panel [2] shows the issue description and comments
+(tabs: Description | Comments).
 
 Panel navigation:
   Tab         Focus next panel
@@ -220,7 +230,8 @@ Within a focused panel:
 
 Actions (available from any panel):
   t           Transition status
-  c           Add Jira comment / Add PR comment (when PR panel focused)
+  c           Add Jira comment / Add PR comment (panels [2], [3], or [4]
+              when the PR Comments tab is active trigger PR comment)
   a           Assign issue
   e           Edit description / ADF fields in $EDITOR
   v           Vote on PR (requires AzDO — see |anvil-azdo|)
@@ -286,6 +297,26 @@ Vote modal (PR tab):~
   Esc         Cancel
 
 ==============================================================================
+CREATE ISSUE                                                      *anvil-create*
+
+Press `n` from the issue list to start the multi-step issue creation flow:
+
+  Step 1  Project picker — fuzzy-type to filter projects, Enter to select,
+          Esc to cancel.
+
+  Step 2  Issue type picker — select the issue type (Bug, Story, Task, etc.)
+          available for the chosen project.
+
+  Step 3  YAML editor — a YAML template is generated and opened in $EDITOR.
+          Required fields are marked [REQUIRED]. Allowed values and type hints
+          are shown as comments above each field. Fill in the values, save, and
+          close to submit. Markdown is supported for description and other
+          rich-text (ADF) fields.
+
+If the editor closes without saving, or a required field is empty, the create
+is aborted (or an error is shown).
+
+==============================================================================
 AZURE DEVOPS                                                       *anvil-azdo*
 
 When the `azdo` block is present in your config (see |anvil-config|), opening
@@ -306,7 +337,7 @@ Create your PAT at https://dev.azure.com/<org>/_usersSettings/tokens with:
   Code    Write       Voting on PRs and adding comments
   Build   Read        Displaying pipeline build status
 
-PR data is displayed across two dedicated panels in the detail view:
+PR data is displayed across three dedicated panels in the detail view:
 
 Panel [2] — Pull Request (left column, compact overview):
   • PR status (Active / Completed / Abandoned), author, source → target branches
@@ -317,13 +348,19 @@ Panel [2] — Pull Request (left column, compact overview):
       ⏳ yellow — Waiting for author
       ○ gray    — No vote
 
-Panel [4] — PR Files (right column, scrollable with 3 tabs):
-  Files tab    — changed files list (A added / M modified / D deleted / R renamed)
-  Diff tab     — unified diff with colored +/- lines and @@ hunk headers
-  Comments tab — PR comment threads [1] [2] ... with author, timestamp, replies
+Panel [3] — Changes (middle column, scrollable with 3 tabs):
+  Files tab            — changed files list (A / M / D / R)
+  Diff tab             — unified diff with colored +/- lines and @@ hunk headers
+  Jira Description tab — Jira issue description rendered from ADF
+
+Panel [4] — Discussion (right column, scrollable with 3 tabs):
+  PR Comments tab  — PR comment threads [1] [2] ... with author, timestamp,
+                     replies indented with ↳
+  Jira Comments tab — Jira issue comments (author + relative timestamp)
+  Jira History tab  — compact changelog (time • author • field: from -> to)
 
 Navigate to a panel with its number key or Tab/Shift+Tab. Switch tabs within
-panel [4] with [ and ].
+panels [3] and [4] with [ and ].
 
 Voting on a pull request:~
 Press `v` (from any panel) to open the Vote modal. Available options:
@@ -337,8 +374,9 @@ Press `v` (from any panel) to open the Vote modal. Available options:
 The reviewer list refreshes automatically after a vote is cast.
 
 PR comments:~
-Press `c` while focused on a PR panel ([2] or [4]) to open the PR comment
-modal. The modal walks through multiple steps:
+Press `c` while focused on a PR panel ([2], [3], or [4] when the PR Comments
+tab is active) to open the PR comment modal. The modal walks through multiple
+steps:
 
   Step 1: Choose comment type
     1  General comment  — top-level PR comment, no file context
@@ -353,7 +391,7 @@ modal. The modal walks through multiple steps:
 
   Final step: write your comment. Press Ctrl+S to submit.
 
-Comment threads are displayed in the PR Files panel Comments tab, numbered [1] [2] ...
+Comment threads are displayed in the Discussion panel PR Comments tab, numbered [1] [2] ...
 Each thread shows its type (General / File: <path> / Code: <path>:<line>),
 the author and timestamp of the root comment, the comment body, and any
 replies indented with ↳. The thread list refreshes automatically after
