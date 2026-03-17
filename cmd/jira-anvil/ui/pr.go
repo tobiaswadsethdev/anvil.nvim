@@ -118,7 +118,7 @@ func (m PRDetailModel) renderOverviewPanel(outerW, outerH int, active bool) stri
 	if active {
 		style = panelActiveStyle
 	}
-	return style.Width(innerW).Height(innerH).Render(content)
+	return style.Width(innerW).Height(innerH).MaxWidth(innerW).MaxHeight(innerH).Render(content)
 }
 
 func (m PRDetailModel) renderOverviewContent(innerW int) string {
@@ -188,7 +188,7 @@ func (m PRDetailModel) renderFilesPanel(outerW, outerH int, active bool) string 
 	if active {
 		style = panelActiveStyle
 	}
-	return style.Width(innerW).Height(innerH).Render(content)
+	return style.Width(innerW).Height(innerH).MaxWidth(innerW).MaxHeight(innerH).Render(content)
 }
 
 // refreshFilesViewport rebuilds the files viewport content after a tab switch.
@@ -268,34 +268,37 @@ func renderDiffTab(fileDiffs []api.FileDiff, width int) string {
 			lineW := maxInt(1, width-1)
 			for _, line := range hunk.Lines {
 				content := strings.ReplaceAll(line.Content, "\t", "    ")
-				wrapped := wrapLinePreserveWhitespace(content, lineW)
-				if len(wrapped) == 0 {
-					wrapped = []string{""}
+				first := cutToWidth(content, lineW)
+				rest := strings.TrimPrefix(content, first)
+
+				prefix := " "
+				switch line.Type {
+				case "added":
+					prefix = "+"
+				case "deleted":
+					prefix = "-"
 				}
 
-				for i, segment := range wrapped {
-					prefix := ""
-					if i == 0 {
+				renderedFirst := prefix + first
+				switch line.Type {
+				case "added":
+					sb.WriteString(lipgloss.NewStyle().Foreground(colorGreen).Render(renderedFirst) + "\n")
+				case "deleted":
+					sb.WriteString(lipgloss.NewStyle().Foreground(colorRed).Render(renderedFirst) + "\n")
+				default:
+					sb.WriteString(lipgloss.NewStyle().Foreground(colorMuted).Render(renderedFirst) + "\n")
+				}
+
+				if rest != "" {
+					for _, segment := range wrapLinePreserveWhitespace(rest, maxInt(1, width)) {
 						switch line.Type {
 						case "added":
-							prefix = "+"
+							sb.WriteString(lipgloss.NewStyle().Foreground(colorGreen).Render(segment) + "\n")
 						case "deleted":
-							prefix = "-"
+							sb.WriteString(lipgloss.NewStyle().Foreground(colorRed).Render(segment) + "\n")
 						default:
-							prefix = " "
+							sb.WriteString(lipgloss.NewStyle().Foreground(colorMuted).Render(segment) + "\n")
 						}
-					} else {
-						segment = strings.TrimPrefix(segment, " ")
-					}
-
-					rendered := prefix + segment
-					switch line.Type {
-					case "added":
-						sb.WriteString(lipgloss.NewStyle().Foreground(colorGreen).Render(rendered) + "\n")
-					case "deleted":
-						sb.WriteString(lipgloss.NewStyle().Foreground(colorRed).Render(rendered) + "\n")
-					default:
-						sb.WriteString(lipgloss.NewStyle().Foreground(colorMuted).Render(rendered) + "\n")
 					}
 				}
 			}
