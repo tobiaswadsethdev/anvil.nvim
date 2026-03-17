@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 var (
@@ -366,11 +367,7 @@ func normalizeBlock(block string, width, height int) []string {
 
 	raw := make([]string, 0, len(rawLines))
 	for _, line := range rawLines {
-		if strings.Contains(line, "\x1b[") {
-			raw = append(raw, line)
-			continue
-		}
-		wrapped := wrapLineToWidth(line, width)
+		wrapped := wrapRenderedLine(line, width)
 		if len(wrapped) == 0 {
 			raw = append(raw, "")
 			continue
@@ -382,8 +379,8 @@ func normalizeBlock(block string, width, height int) []string {
 	for i := 0; i < height; i++ {
 		if i < len(raw) {
 			line := raw[i]
-			if !strings.Contains(line, "\x1b[") && lipgloss.Width(line) > width {
-				line = cutToWidth(line, width)
+			if ansi.StringWidth(line) > width {
+				line = ansi.Truncate(line, width, "")
 			}
 			lines[i] = padToWidth(line, width)
 		} else {
@@ -393,7 +390,7 @@ func normalizeBlock(block string, width, height int) []string {
 	return lines
 }
 
-func wrapLineToWidth(line string, width int) []string {
+func wrapRenderedLine(line string, width int) []string {
 	if width < 1 {
 		return []string{""}
 	}
@@ -401,7 +398,13 @@ func wrapLineToWidth(line string, width int) []string {
 		return []string{""}
 	}
 
-	wrapped := lipgloss.NewStyle().Width(width).Render(line)
+	var wrapped string
+	if strings.Contains(line, "\x1b[") {
+		wrapped = ansi.Hardwrap(line, width, true)
+	} else {
+		wrapped = lipgloss.NewStyle().Width(width).Render(line)
+	}
+
 	parts := strings.Split(wrapped, "\n")
 	for len(parts) > 0 && parts[len(parts)-1] == "" {
 		parts = parts[:len(parts)-1]
@@ -437,7 +440,7 @@ func wrapLinePreserveWhitespace(line string, width int) []string {
 }
 
 func padToWidth(s string, width int) string {
-	w := lipgloss.Width(s)
+	w := ansi.StringWidth(s)
 	if w >= width {
 		return s
 	}
