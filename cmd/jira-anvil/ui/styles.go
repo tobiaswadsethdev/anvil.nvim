@@ -219,7 +219,6 @@ func renderPanelScaffold(num int, title string, active bool, tabs []string, acti
 	}
 	bodyH := maxInt(1, innerH-bodyHeaderH)
 	body = strings.Join(clampBlockHeight(body, bodyH), "\n")
-	body = lipgloss.NewStyle().Width(innerW).MaxWidth(innerW).Render(body)
 
 	parts := []string{renderPanelTitle(num, title, active)}
 	if len(tabs) > 0 {
@@ -401,17 +400,7 @@ func wrapRenderedLine(line string, width int) []string {
 	if strings.Contains(line, "\x1b[") {
 		return []string{line}
 	}
-
-	wrapped := lipgloss.NewStyle().Width(width).Render(line)
-
-	parts := strings.Split(wrapped, "\n")
-	for len(parts) > 0 && parts[len(parts)-1] == "" {
-		parts = parts[:len(parts)-1]
-	}
-	if len(parts) == 0 {
-		return []string{""}
-	}
-	return parts
+	return wrapLinePreserveWhitespace(line, width)
 }
 
 func wrapLinePreserveWhitespace(line string, width int) []string {
