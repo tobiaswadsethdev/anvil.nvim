@@ -7,6 +7,7 @@ A Jira Cloud TUI for Neovim. Browse issues, manage transitions, review pull requ
 - **JQL filter cycling** — define named filters and cycle through them with `[` / `]`
 - **Issue list** — table view with key, summary, status, priority, assignee, and age
 - **Issue detail** — lazygit-style multi-panel view with a responsive grid: issue metadata, PR overview, changes, and discussion/history
+- **Create issue** — multi-step flow: project picker → issue type picker → YAML template in `$EDITOR`
 - **Transitions** — change issue status via modal
 - **Comments** — add comments (Markdown → ADF)
 - **Assign** — fuzzy-search and assign users
@@ -149,6 +150,7 @@ When `position = "float"`, setting `rounded = true` draws a rounded border aroun
 | `↑` / `k`   | Move up                  |
 | `↓` / `j`   | Move down                |
 | `Enter`     | Open issue detail        |
+| `n`         | Create new issue         |
 | `r`         | Refresh                  |
 | `o`         | Open in browser          |
 | `?`         | Show help                |
@@ -240,7 +242,7 @@ Navigate with `j` / `k`, select with `Enter` or a number key, cancel with `Esc`.
 
 ### PR Comments
 
-Press `c` while focused on a PR panel (`[2]` or `[4]`) to open the PR comment modal. It guides you through a multi-step flow:
+Press `c` while focused on a PR panel (`[2]`, `[3]`, or `[4]` when the PR Comments tab is active) to open the PR comment modal. It guides you through a multi-step flow:
 
 **Step 1 — Choose comment type:**
 
@@ -260,6 +262,16 @@ Press `c` while focused on a PR panel (`[2]` or `[4]`) to open the PR comment mo
 **Final step** — Write your comment text. Press `Ctrl+S` to submit or `Esc` to go back.
 
 After submission, the comments section refreshes automatically. Use `Esc` at any step to navigate back through the flow.
+
+## Create Issue
+
+Press `n` from the issue list to create a new Jira issue. The flow is multi-step:
+
+1. **Project picker** — fuzzy-search and select the target Jira project.
+2. **Issue type picker** — select the issue type (Bug, Story, Task, etc.) available for that project.
+3. **YAML editor** — a YAML template is generated and opened in `$EDITOR`. Required fields are marked `[REQUIRED]`. Fill in the values, save, and close to submit.
+
+Field type hints and allowed values are shown as comments in the template. Markdown is supported for description and other rich-text fields (converted to ADF on submit).
 
 ## ADF Support
 
