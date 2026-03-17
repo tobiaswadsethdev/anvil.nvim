@@ -366,11 +366,7 @@ func normalizeBlock(block string, width, height int) []string {
 
 	raw := make([]string, 0, len(rawLines))
 	for _, line := range rawLines {
-		if strings.Contains(line, "\x1b[") {
-			raw = append(raw, line)
-			continue
-		}
-		wrapped := wrapLine(line, width)
+		wrapped := wrapLineToWidth(line, width)
 		if len(wrapped) == 0 {
 			raw = append(raw, "")
 			continue
@@ -391,6 +387,49 @@ func normalizeBlock(block string, width, height int) []string {
 		}
 	}
 	return lines
+}
+
+func wrapLineToWidth(line string, width int) []string {
+	if width < 1 {
+		return []string{""}
+	}
+	if line == "" {
+		return []string{""}
+	}
+
+	wrapped := lipgloss.NewStyle().Width(width).Render(line)
+	parts := strings.Split(wrapped, "\n")
+	for len(parts) > 0 && parts[len(parts)-1] == "" {
+		parts = parts[:len(parts)-1]
+	}
+	if len(parts) == 0 {
+		return []string{""}
+	}
+	return parts
+}
+
+func wrapLinePreserveWhitespace(line string, width int) []string {
+	if width < 1 {
+		return []string{""}
+	}
+	if line == "" {
+		return []string{""}
+	}
+
+	remaining := line
+	out := make([]string, 0, (len(line)/maxInt(1, width))+1)
+	for remaining != "" {
+		chunk := cutToWidth(remaining, width)
+		if chunk == "" {
+			break
+		}
+		out = append(out, chunk)
+		remaining = strings.TrimPrefix(remaining, chunk)
+	}
+	if len(out) == 0 {
+		return []string{""}
+	}
+	return out
 }
 
 func padToWidth(s string, width int) string {

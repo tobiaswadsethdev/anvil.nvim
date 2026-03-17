@@ -248,11 +248,13 @@ func renderDiffTab(fileDiffs []api.FileDiff, width int) string {
 		}
 		headerText := "┌ " + changeTypeLabel(fd.ChangeType) + ": " + fd.Path
 		headerW := maxInt(1, width-1)
-		fileHeader := lipgloss.NewStyle().
-			Foreground(colorSecond).
-			Bold(true).
-			Render(TruncateString(headerText, headerW))
-		sb.WriteString(fileHeader + "\n")
+		for _, headerLine := range wrapLinePreserveWhitespace(headerText, headerW) {
+			fileHeader := lipgloss.NewStyle().
+				Foreground(colorSecond).
+				Bold(true).
+				Render(headerLine)
+			sb.WriteString(fileHeader + "\n")
+		}
 
 		if fd.Binary {
 			sb.WriteString(lipgloss.NewStyle().Foreground(colorMuted).Render("  [binary file]") + "\n\n")
@@ -260,17 +262,37 @@ func renderDiffTab(fileDiffs []api.FileDiff, width int) string {
 		}
 		for _, hunk := range fd.Hunks {
 			hunkHeaderW := maxInt(1, width)
-			sb.WriteString(lipgloss.NewStyle().Foreground(colorSecond).Render(TruncateString(hunk.Header, hunkHeaderW)) + "\n")
+			for _, hunkLine := range wrapLinePreserveWhitespace(hunk.Header, hunkHeaderW) {
+				sb.WriteString(lipgloss.NewStyle().Foreground(colorSecond).Render(hunkLine) + "\n")
+			}
 			lineW := maxInt(1, width-1)
 			for _, line := range hunk.Lines {
-				content := TruncateString(line.Content, lineW)
-				switch line.Type {
-				case "added":
-					sb.WriteString(lipgloss.NewStyle().Foreground(colorGreen).Render("+"+content) + "\n")
-				case "deleted":
-					sb.WriteString(lipgloss.NewStyle().Foreground(colorRed).Render("-"+content) + "\n")
-				default:
-					sb.WriteString(lipgloss.NewStyle().Foreground(colorMuted).Render(" "+content) + "\n")
+				content := strings.ReplaceAll(line.Content, "\t", "    ")
+				wrapped := wrapLinePreserveWhitespace(content, lineW)
+				if len(wrapped) == 0 {
+					wrapped = []string{""}
+				}
+
+				for i, segment := range wrapped {
+					prefix := " "
+					if i == 0 {
+						switch line.Type {
+						case "added":
+							prefix = "+"
+						case "deleted":
+							prefix = "-"
+						}
+					}
+
+					rendered := prefix + segment
+					switch line.Type {
+					case "added":
+						sb.WriteString(lipgloss.NewStyle().Foreground(colorGreen).Render(rendered) + "\n")
+					case "deleted":
+						sb.WriteString(lipgloss.NewStyle().Foreground(colorRed).Render(rendered) + "\n")
+					default:
+						sb.WriteString(lipgloss.NewStyle().Foreground(colorMuted).Render(rendered) + "\n")
+					}
 				}
 			}
 		}
