@@ -253,13 +253,13 @@ func TruncateString(s string, maxLen int) string {
 	if maxLen <= 0 {
 		return ""
 	}
-	if len(s) <= maxLen {
+	if ansi.StringWidth(s) <= maxLen {
 		return s
 	}
 	if maxLen <= 3 {
-		return s[:maxLen]
+		return ansi.Truncate(s, maxLen, "")
 	}
-	return s[:maxLen-3] + "..."
+	return ansi.Truncate(s, maxLen, "...")
 }
 
 func indentWrappedText(text string, width int, spaces int) string {
@@ -366,12 +366,7 @@ func normalizeBlock(block string, width, height int) []string {
 
 	raw := make([]string, 0, len(rawLines))
 	for _, line := range rawLines {
-		wrapped := wrapRenderedLine(line, width)
-		if len(wrapped) == 0 {
-			raw = append(raw, "")
-			continue
-		}
-		raw = append(raw, wrapped...)
+		raw = append(raw, strings.ReplaceAll(line, "\t", "    "))
 	}
 
 	lines := make([]string, height)
@@ -387,20 +382,6 @@ func normalizeBlock(block string, width, height int) []string {
 		}
 	}
 	return lines
-}
-
-func wrapRenderedLine(line string, width int) []string {
-	if width < 1 {
-		return []string{""}
-	}
-	if line == "" {
-		return []string{""}
-	}
-
-	if strings.Contains(line, "\x1b[") {
-		return []string{line}
-	}
-	return wrapLinePreserveWhitespace(line, width)
 }
 
 func wrapLinePreserveWhitespace(line string, width int) []string {
