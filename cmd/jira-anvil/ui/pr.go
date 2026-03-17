@@ -118,7 +118,7 @@ func (m PRDetailModel) renderOverviewPanel(outerW, outerH int, active bool) stri
 	if active {
 		style = panelActiveStyle
 	}
-	return style.Width(innerW).Height(innerH).MaxWidth(innerW).MaxHeight(innerH).Render(content)
+	return style.Render(content)
 }
 
 func (m PRDetailModel) renderOverviewContent(innerW int) string {
@@ -188,7 +188,7 @@ func (m PRDetailModel) renderFilesPanel(outerW, outerH int, active bool) string 
 	if active {
 		style = panelActiveStyle
 	}
-	return style.Width(innerW).Height(innerH).MaxWidth(innerW).MaxHeight(innerH).Render(content)
+	return style.Render(content)
 }
 
 // refreshFilesViewport rebuilds the files viewport content after a tab switch.
