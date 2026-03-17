@@ -10,6 +10,7 @@ import (
 // Node represents an ADF document node.
 type Node struct {
 	Type    string          `json:"type"`
+	Version int             `json:"version,omitempty"` // required on root "doc" node (must be 1)
 	Content []Node          `json:"content,omitempty"`
 	Text    string          `json:"text,omitempty"`
 	Attrs   json.RawMessage `json:"attrs,omitempty"`

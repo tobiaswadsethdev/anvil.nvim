@@ -242,7 +242,7 @@ var (
 
 func markdownToADF(md string) Node {
 	lines := strings.Split(md, "\n")
-	doc := Node{Type: "doc", Content: []Node{}}
+	doc := Node{Type: "doc", Version: 1, Content: []Node{}}
 
 	i := 0
 	for i < len(lines) {
@@ -492,7 +492,8 @@ func parseInline(text string) []Node {
 
 func simpleDoc(text string) Node {
 	return Node{
-		Type: "doc",
+		Type:    "doc",
+		Version: 1,
 		Content: []Node{
 			{
 				Type:    "paragraph",
