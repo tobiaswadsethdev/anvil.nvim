@@ -366,6 +366,10 @@ func normalizeBlock(block string, width, height int) []string {
 
 	raw := make([]string, 0, len(rawLines))
 	for _, line := range rawLines {
+		if strings.Contains(line, "\x1b[") {
+			raw = append(raw, line)
+			continue
+		}
 		wrapped := wrapLineToWidth(line, width)
 		if len(wrapped) == 0 {
 			raw = append(raw, "")
