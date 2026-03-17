@@ -398,12 +398,11 @@ func wrapRenderedLine(line string, width int) []string {
 		return []string{""}
 	}
 
-	var wrapped string
 	if strings.Contains(line, "\x1b[") {
-		wrapped = ansi.Hardwrap(line, width, true)
-	} else {
-		wrapped = lipgloss.NewStyle().Width(width).Render(line)
+		return []string{line}
 	}
+
+	wrapped := lipgloss.NewStyle().Width(width).Render(line)
 
 	parts := strings.Split(wrapped, "\n")
 	for len(parts) > 0 && parts[len(parts)-1] == "" {

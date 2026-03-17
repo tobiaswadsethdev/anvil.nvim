@@ -282,6 +282,8 @@ func renderDiffTab(fileDiffs []api.FileDiff, width int) string {
 						case "deleted":
 							prefix = "-"
 						}
+					} else {
+						segment = strings.TrimLeft(segment, " ")
 					}
 
 					rendered := prefix + segment
