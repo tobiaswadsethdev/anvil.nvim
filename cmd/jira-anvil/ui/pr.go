@@ -274,16 +274,18 @@ func renderDiffTab(fileDiffs []api.FileDiff, width int) string {
 				}
 
 				for i, segment := range wrapped {
-					prefix := " "
+					prefix := ""
 					if i == 0 {
 						switch line.Type {
 						case "added":
 							prefix = "+"
 						case "deleted":
 							prefix = "-"
+						default:
+							prefix = " "
 						}
 					} else {
-						segment = strings.TrimLeft(segment, " ")
+						segment = strings.TrimPrefix(segment, " ")
 					}
 
 					rendered := prefix + segment

@@ -218,7 +218,7 @@ func renderPanelScaffold(num int, title string, active bool, tabs []string, acti
 		bodyHeaderH = 3 // title + tabs + divider
 	}
 	bodyH := maxInt(1, innerH-bodyHeaderH)
-	body = strings.Join(clampBlockHeight(body, bodyH), "\n")
+	body = strings.Join(clampBlockWidth(clampBlockHeight(body, bodyH), innerW), "\n")
 
 	parts := []string{renderPanelTitle(num, title, active)}
 	if len(tabs) > 0 {
@@ -227,6 +227,20 @@ func renderPanelScaffold(num int, title string, active bool, tabs []string, acti
 	parts = append(parts, panelDivider(innerW))
 	parts = append(parts, body)
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+}
+
+func clampBlockWidth(lines []string, width int) []string {
+	if width < 1 {
+		width = 1
+	}
+	out := make([]string, len(lines))
+	for i, line := range lines {
+		if ansi.StringWidth(line) > width {
+			line = ansi.Truncate(line, width, "")
+		}
+		out[i] = line
+	}
+	return out
 }
 
 func clampBlockHeight(block string, height int) []string {
