@@ -586,7 +586,7 @@ func renderCommentsContent(issue *api.Issue, width int) string {
 			sb.WriteString(indentWrappedText(body, maxInt(1, width-2), 2))
 		}
 		sb.WriteString("\n")
-		sb.WriteString(strings.Repeat("─", maxInt(1, width-4)) + "\n")
+		sb.WriteString(strings.Repeat("─", maxInt(1, width-2)) + "\n")
 	}
 	return sb.String()
 }

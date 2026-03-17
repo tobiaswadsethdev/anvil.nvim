@@ -209,7 +209,7 @@ func panelInnerSize(outerW, outerH int) (innerW, innerH int) {
 }
 
 func panelDivider(innerW int) string {
-	return strings.Repeat("─", maxInt(1, innerW-2))
+	return strings.Repeat("─", maxInt(1, innerW))
 }
 
 func renderPanelScaffold(num int, title string, active bool, tabs []string, activeTab int, innerW, innerH int, body string) string {
