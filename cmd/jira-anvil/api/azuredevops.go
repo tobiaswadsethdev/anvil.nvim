@@ -155,6 +155,76 @@ func (c *AzdoClient) PRWebURL(pr *PullRequest) string {
 	return fmt.Sprintf("%s/%s/_git/%s/pullrequest/%d", c.baseURL, c.project, repo, pr.PullRequestID)
 }
 
+// RepoName returns the configured repository name (empty if not set).
+func (c *AzdoClient) RepoName() string {
+	return c.repo
+}
+
+// ListBranches returns the short branch names (without "refs/heads/" prefix) for the given repository.
+// If repoName is empty, the client's configured repo is used.
+func (c *AzdoClient) ListBranches(repoName string) ([]string, error) {
+	if repoName == "" {
+		repoName = c.repo
+	}
+	url := fmt.Sprintf("%s/refs?filter=heads/&$top=200&api-version=7.1", c.repoURLFor(repoName))
+	body, err := c.get(url)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Value []struct {
+			Name string `json:"name"`
+		} `json:"value"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("parsing branches: %w", err)
+	}
+
+	branches := make([]string, 0, len(result.Value))
+	for _, ref := range result.Value {
+		name := strings.TrimPrefix(ref.Name, "refs/heads/")
+		branches = append(branches, name)
+	}
+	return branches, nil
+}
+
+// CreatePullRequest creates a new pull request in the given repository.
+// sourceBranch and targetBranch should be short branch names (without "refs/heads/").
+func (c *AzdoClient) CreatePullRequest(repoName, title, description, sourceBranch, targetBranch string) (*PullRequest, error) {
+	if repoName == "" {
+		repoName = c.repo
+	}
+	type prRequest struct {
+		Title         string `json:"title"`
+		Description   string `json:"description"`
+		SourceRefName string `json:"sourceRefName"`
+		TargetRefName string `json:"targetRefName"`
+	}
+	payload, err := json.Marshal(prRequest{
+		Title:         title,
+		Description:   description,
+		SourceRefName: "refs/heads/" + sourceBranch,
+		TargetRefName: "refs/heads/" + targetBranch,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	url := fmt.Sprintf("%s/pullrequests?api-version=7.1", c.repoURLFor(repoName))
+	respBody, err := c.post(url, payload)
+	if err != nil {
+		return nil, err
+	}
+
+	var pr PullRequest
+	if err := json.Unmarshal(respBody, &pr); err != nil {
+		return nil, fmt.Errorf("parsing created PR: %w", err)
+	}
+	pr.RepoName = repoName
+	return &pr, nil
+}
+
 // --- Internal helpers ---
 
 func (c *AzdoClient) repoURLFor(repo string) string {

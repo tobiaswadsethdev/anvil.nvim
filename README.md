@@ -16,6 +16,7 @@ A Jira Cloud TUI for Neovim. Browse issues, manage transitions, review pull requ
 - **Azure DevOps PR integration** — linked pull request data shown in dedicated overview/changes/discussion panels with Jira context tabs
 - **PR voting** — view reviewer votes and cast your own (Approve / Reject / etc.) via `v`
 - **PR comments** — view existing PR comment threads and add new ones or reply to threads via `c`
+- **Create PR** — create a new Azure DevOps pull request directly from the issue detail view via `p`
 
 ## Requirements
 
@@ -182,6 +183,7 @@ The detail view uses a **lazygit-style multi-panel layout**. Without Azure DevOp
 | `e`             | Edit in `$EDITOR`                                 |
 | `v`             | Vote on PR *(requires AzDO)*                      |
 | `y`             | Copy PR link to clipboard *(requires AzDO)*       |
+| `p`             | Create PR *(requires AzDO, only when no PR exists)*|
 | `o`             | Open in browser                                   |
 | `r`             | Reload                                            |
 | `?`             | Show help                                         |
@@ -262,6 +264,20 @@ Press `c` while focused on a PR panel (`[2]`, `[3]`, or `[4]` when the PR Commen
 **Final step** — Write your comment text. Press `Ctrl+S` to submit or `Esc` to go back.
 
 After submission, the comments section refreshes automatically. Use `Esc` at any step to navigate back through the flow.
+
+### Create PR
+
+When no pull request is found for the current issue, press `p` in the issue detail view to open the create-PR modal. It walks you through four steps:
+
+**Step 1 — Title** — Enter the PR title. Pre-filled with the Jira issue summary. Press `Enter` to advance or `Esc` to cancel.
+
+**Step 2 — Source branch** — Enter the source branch name (the feature branch to merge from). Pre-filled with the issue key as a starting point. Press `Enter` to advance or `Esc` to go back.
+
+**Step 3 — Target branch** — Select the target branch (the branch to merge into) from a searchable list fetched from Azure DevOps. The list defaults to `main` or `master` when present. Navigate with `j` / `k`, type to filter, press `Enter` to advance, `Esc` to go back.
+
+**Step 4 — Description** — Optionally enter a PR description. Press `Ctrl+S` to create the PR or `Esc` to go back.
+
+Once created, the PR panel refreshes automatically and shows the new pull request. The PAT must have **Code (Write)** scope to create pull requests.
 
 ## Create Issue
 
