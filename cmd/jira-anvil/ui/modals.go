@@ -802,6 +802,296 @@ func (m CreateIssueTypeModel) view() string {
 	return modalStyle.Render(sb.String())
 }
 
+// --- CreatePRModel ---
+
+// createPRStep tracks which step of the create-PR flow the user is on.
+type createPRStep int
+
+const (
+	createPRStepTitle       createPRStep = iota // enter PR title
+	createPRStepSource                          // enter source branch name
+	createPRStepTarget                          // select target branch from list
+	createPRStepDescription                     // enter optional description
+)
+
+// CreatePRResult holds the completed form data returned when the user submits.
+type CreatePRResult struct {
+	Title       string
+	Description string
+	Source      string
+	Target      string
+	RepoName    string
+}
+
+// CreatePRModel is a multi-step modal for creating a new pull request.
+type CreatePRModel struct {
+	step         createPRStep
+	repoName     string
+	title        textinput.Model
+	source       textinput.Model
+	branches     []string
+	filtered     []string
+	branchCursor int
+	branchSearch textinput.Model
+	description  textarea.Model
+}
+
+// NewCreatePRModel creates the create-PR modal pre-populated from the current issue.
+func NewCreatePRModel(branches []string, repoName, issueKey, issueSummary string) CreatePRModel {
+	title := textinput.New()
+	title.Placeholder = "Pull request title"
+	title.SetValue(issueSummary)
+	title.Width = 60
+	title.Focus()
+
+	source := textinput.New()
+	source.Placeholder = "e.g. feature/" + issueKey
+	source.SetValue(issueKey)
+	source.Width = 60
+
+	bs := textinput.New()
+	bs.Placeholder = "Search branch..."
+	bs.Width = 40
+
+	ta := textarea.New()
+	ta.Placeholder = "Optional description (Ctrl+S to submit, Esc to go back)"
+	ta.SetWidth(60)
+	ta.SetHeight(6)
+
+	// Default cursor to "main" or "master" if present.
+	cursor := 0
+	for i, b := range branches {
+		if b == "main" || b == "master" {
+			cursor = i
+			break
+		}
+	}
+
+	return CreatePRModel{
+		step:         createPRStepTitle,
+		repoName:     repoName,
+		title:        title,
+		source:       source,
+		branches:     branches,
+		filtered:     branches,
+		branchCursor: cursor,
+		branchSearch: bs,
+		description:  ta,
+	}
+}
+
+func (m CreatePRModel) Init() tea.Cmd {
+	return textarea.Blink
+}
+
+// update processes a message and returns the updated model, a result (non-nil when done and submitted), and a done flag.
+func (m CreatePRModel) update(msg tea.Msg) (CreatePRModel, *CreatePRResult, bool) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch m.step {
+		case createPRStepTitle:
+			return m.updateTitleStep(msg)
+		case createPRStepSource:
+			return m.updateSourceStep(msg)
+		case createPRStepTarget:
+			return m.updateTargetStep(msg)
+		case createPRStepDescription:
+			return m.updateDescStep(msg)
+		}
+	}
+	// Delegate textarea updates for non-key messages at description step.
+	if m.step == createPRStepDescription {
+		var cmd tea.Cmd
+		m.description, cmd = m.description.Update(msg)
+		_ = cmd
+	}
+	return m, nil, false
+}
+
+func (m CreatePRModel) updateTitleStep(msg tea.KeyMsg) (CreatePRModel, *CreatePRResult, bool) {
+	switch msg.String() {
+	case "esc":
+		return m, nil, true // cancel
+	case "enter":
+		if strings.TrimSpace(m.title.Value()) != "" {
+			m.step = createPRStepSource
+			m.title.Blur()
+			m.source.Focus()
+		}
+		return m, nil, false
+	}
+	var cmd tea.Cmd
+	m.title, cmd = m.title.Update(msg)
+	_ = cmd
+	return m, nil, false
+}
+
+func (m CreatePRModel) updateSourceStep(msg tea.KeyMsg) (CreatePRModel, *CreatePRResult, bool) {
+	switch msg.String() {
+	case "esc":
+		m.step = createPRStepTitle
+		m.source.Blur()
+		m.title.Focus()
+		return m, nil, false
+	case "enter":
+		if strings.TrimSpace(m.source.Value()) != "" {
+			m.step = createPRStepTarget
+			m.source.Blur()
+			m.branchSearch.Focus()
+		}
+		return m, nil, false
+	}
+	var cmd tea.Cmd
+	m.source, cmd = m.source.Update(msg)
+	_ = cmd
+	return m, nil, false
+}
+
+func (m CreatePRModel) updateTargetStep(msg tea.KeyMsg) (CreatePRModel, *CreatePRResult, bool) {
+	switch msg.String() {
+	case "esc":
+		m.step = createPRStepSource
+		m.branchSearch.Blur()
+		m.source.Focus()
+		return m, nil, false
+	case "enter":
+		if len(m.filtered) > 0 {
+			m.step = createPRStepDescription
+			m.branchSearch.Blur()
+			m.description.Focus()
+		}
+		return m, nil, false
+	case "j", "down":
+		if m.branchCursor < len(m.filtered)-1 {
+			m.branchCursor++
+		}
+		return m, nil, false
+	case "k", "up":
+		if m.branchCursor > 0 {
+			m.branchCursor--
+		}
+		return m, nil, false
+	}
+	var cmd tea.Cmd
+	m.branchSearch, cmd = m.branchSearch.Update(msg)
+	_ = cmd
+	m.filterBranches()
+	return m, nil, false
+}
+
+func (m CreatePRModel) updateDescStep(msg tea.KeyMsg) (CreatePRModel, *CreatePRResult, bool) {
+	switch msg.String() {
+	case "esc":
+		m.step = createPRStepTarget
+		m.description.Blur()
+		m.branchSearch.Focus()
+		return m, nil, false
+	case "ctrl+s":
+		target := ""
+		if len(m.filtered) > 0 && m.branchCursor < len(m.filtered) {
+			target = m.filtered[m.branchCursor]
+		}
+		result := &CreatePRResult{
+			Title:       strings.TrimSpace(m.title.Value()),
+			Description: strings.TrimSpace(m.description.Value()),
+			Source:      strings.TrimSpace(m.source.Value()),
+			Target:      target,
+			RepoName:    m.repoName,
+		}
+		return m, result, true
+	}
+	var cmd tea.Cmd
+	m.description, cmd = m.description.Update(msg)
+	_ = cmd
+	return m, nil, false
+}
+
+func (m *CreatePRModel) filterBranches() {
+	query := strings.ToLower(m.branchSearch.Value())
+	if query == "" {
+		m.filtered = m.branches
+		m.branchCursor = 0
+		return
+	}
+	var result []string
+	for _, b := range m.branches {
+		if strings.Contains(strings.ToLower(b), query) {
+			result = append(result, b)
+		}
+	}
+	m.filtered = result
+	m.branchCursor = 0
+}
+
+func (m CreatePRModel) view() string {
+	var sb strings.Builder
+
+	switch m.step {
+	case createPRStepTitle:
+		sb.WriteString(modalTitleStyle.Render("Create Pull Request — Title") + "\n\n")
+		sb.WriteString(m.title.View() + "\n")
+		sb.WriteString("\n" + helpStyle.Render(
+			keyStyle.Render("Enter")+" next  "+keyStyle.Render("Esc")+" cancel",
+		))
+
+	case createPRStepSource:
+		sb.WriteString(modalTitleStyle.Render("Create Pull Request — Source Branch") + "\n\n")
+		sb.WriteString(lipgloss.NewStyle().Foreground(colorMuted).Render("Title: "+m.title.Value()) + "\n\n")
+		sb.WriteString(m.source.View() + "\n")
+		sb.WriteString("\n" + helpStyle.Render(
+			keyStyle.Render("Enter")+" next  "+keyStyle.Render("Esc")+" back",
+		))
+
+	case createPRStepTarget:
+		sb.WriteString(modalTitleStyle.Render("Create Pull Request — Target Branch") + "\n\n")
+		sb.WriteString(m.branchSearch.View() + "\n\n")
+
+		maxVisible := 8
+		start := 0
+		if m.branchCursor >= maxVisible {
+			start = m.branchCursor - maxVisible + 1
+		}
+		shown := m.filtered
+		if len(shown) > 0 {
+			end := start + maxVisible
+			if end > len(shown) {
+				end = len(shown)
+			}
+			shown = shown[start:end]
+		}
+		for i, b := range shown {
+			realIdx := start + i
+			if realIdx == m.branchCursor {
+				sb.WriteString(selectedItemStyle.Render("  "+b) + "\n")
+			} else {
+				sb.WriteString(normalItemStyle.Render("  "+b) + "\n")
+			}
+		}
+		if len(m.filtered) == 0 {
+			sb.WriteString(lipgloss.NewStyle().Foreground(colorMuted).Render("  No branches found") + "\n")
+		}
+		sb.WriteString("\n" + helpStyle.Render(
+			keyStyle.Render("j/k")+" navigate  "+keyStyle.Render("Enter")+" next  "+keyStyle.Render("Esc")+" back",
+		))
+
+	case createPRStepDescription:
+		target := ""
+		if len(m.filtered) > 0 && m.branchCursor < len(m.filtered) {
+			target = m.filtered[m.branchCursor]
+		}
+		sb.WriteString(modalTitleStyle.Render("Create Pull Request — Description") + "\n\n")
+		sb.WriteString(lipgloss.NewStyle().Foreground(colorMuted).Render(
+			m.source.Value()+" → "+target,
+		) + "\n\n")
+		sb.WriteString(m.description.View())
+		sb.WriteString("\n\n" + helpStyle.Render(
+			keyStyle.Render("Ctrl+S")+" create PR  "+keyStyle.Render("Esc")+" back",
+		))
+	}
+
+	return modalStyle.Render(sb.String())
+}
+
 func (m PRCommentModel) view() string {
 	var sb strings.Builder
 

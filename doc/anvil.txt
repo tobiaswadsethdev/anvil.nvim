@@ -42,6 +42,7 @@ Features:
     Jira comments, Jira history) as dedicated panels in the detail view
   • PR voting — cast Approve / Reject / etc. via v
   • PR comments — view, add, and reply to PR comment threads
+  • Create PR — create a new Azure DevOps pull request via p (when no PR exists)
   • Flexible window layouts: floating, right split, or bottom split
 
 ==============================================================================
@@ -236,6 +237,7 @@ Actions (available from any panel):
   e           Edit description / ADF fields in $EDITOR
   v           Vote on PR (requires AzDO — see |anvil-azdo|)
   y           Copy PR link to clipboard (requires AzDO)
+  p           Create PR (requires AzDO, only when no PR exists)
   o           Open in browser
   r           Reload issue
   ?           Show help
@@ -281,6 +283,26 @@ PR comment modal (multi-step):~
     (type)      Write comment text
     Ctrl+S      Submit comment
     Esc         Back to previous step
+
+Create PR modal (multi-step, available via p when no PR exists):~
+  Step 1 — PR title:
+    (type)      Edit title (pre-filled with Jira issue summary)
+    Enter       Advance to next step
+    Esc         Cancel
+  Step 2 — source branch:
+    (type)      Enter the source (feature) branch name
+    Enter       Advance to next step
+    Esc         Back to step 1
+  Step 3 — target branch:
+    (type)      Filter branches
+    j / ↓       Navigate branches
+    k / ↑       Navigate branches
+    Enter       Select target branch and advance
+    Esc         Back to step 2
+  Step 4 — description:
+    (type)      Write optional PR description
+    Ctrl+S      Create the pull request
+    Esc         Back to step 3
 
 Assign modal:~
   (type)      Filter users

@@ -24,6 +24,7 @@ const (
 	StatePRComment                    // PR comment/reply modal
 	StateCreateProject                // project picker for new issue
 	StateCreateIssueType              // issue type picker for new issue
+	StateCreatePR                     // create pull request modal
 )
 
 // createIssueCtx holds the accumulated context during the multi-step issue creation flow.
@@ -58,6 +59,7 @@ type Model struct {
 	createProject   CreateProjectModel
 	createIssueType CreateIssueTypeModel
 	createCtx       createIssueCtx
+	createPR        CreatePRModel
 }
 
 // --- Messages ---
@@ -227,6 +229,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.list.loading = true
 		return m, tea.Batch(m.list.spinner.Tick, m.list.fetchCmd())
 
+	case branchesLoadedMsg:
+		m.createPR = NewCreatePRModel(msg.branches, msg.repoName, msg.issueKey, msg.issueSummary)
+		m.state = StateCreatePR
+		return m, m.createPR.Init()
+
+	case prCreatedMsg:
+		m.statusMsg = fmt.Sprintf("PR #%d created", msg.pr.PullRequestID)
+		m.state = StateDetail
+		return m, fetchPRCmd(m.azdoClient, m.detail.issue.Key)
+
 	case errMsg:
 		m.err = msg.err
 		m.list.loading = false
@@ -267,6 +279,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleCreateProjectKey(msg)
 	case StateCreateIssueType:
 		return m.handleCreateIssueTypeKey(msg)
+	case StateCreatePR:
+		return m.handleCreatePRKey(msg)
 	}
 	return m, nil
 }
@@ -400,6 +414,12 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			} else {
 				m.statusMsg = "Failed to copy: install xclip, wl-copy, or pbcopy"
 			}
+		}
+		return m, nil
+
+	case "p":
+		if m.detail.hasPR && m.detail.prModel.notFound {
+			return m, loadBranchesCmd(m.azdoClient, m.detail.issue.Key, m.detail.issue.Fields.Summary)
 		}
 		return m, nil
 
@@ -585,6 +605,19 @@ func (m Model) handleCreateIssueTypeKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m Model) handleCreatePRKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	var result *CreatePRResult
+	var done bool
+	m.createPR, result, done = m.createPR.update(msg)
+	if done {
+		m.state = StateDetail
+		if result != nil {
+			return m, createPRCmd(m.azdoClient, result.RepoName, result.Title, result.Description, result.Source, result.Target)
+		}
+	}
+	return m, nil
+}
+
 func (m Model) reloadDetail() (tea.Model, tea.Cmd) {
 	if m.detail.issue == nil || m.detail.issue.Key == "" {
 		m.state = StateList
@@ -618,6 +651,8 @@ func (m Model) View() string {
 		return m.renderOverlay(m.list.view(), m.createProject.view())
 	case StateCreateIssueType:
 		return m.renderOverlay(m.list.view(), m.createIssueType.view())
+	case StateCreatePR:
+		return m.renderOverlay(m.detail.view(), m.createPR.view())
 	}
 	return ""
 }
@@ -680,4 +715,4 @@ func (m Model) renderOverlay(base, modal string) string {
 
 // Help strings
 const listHelp = "↑/↓: navigate  Enter: open  [/]: cycle filter  r: refresh  n: new issue  o: browser  q: quit"
-const detailHelp = "Tab/S-Tab: panel  1-4: jump  [/]: tab  ↑/↓: scroll  t: transition  c: comment (Jira/PR)  a: assign  e: edit  v: vote (PR)  y: copy PR link  o: browser  q: back"
+const detailHelp = "Tab/S-Tab: panel  1-4: jump  [/]: tab  ↑/↓: scroll  t: transition  c: comment (Jira/PR)  a: assign  e: edit  v: vote (PR)  y: copy PR link  p: create PR (when no PR)  o: browser  q: back"

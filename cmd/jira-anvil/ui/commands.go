@@ -87,6 +87,17 @@ type execCreateEditorMsg struct {
 	client *api.Client
 }
 
+type branchesLoadedMsg struct {
+	branches     []string
+	repoName     string
+	issueKey     string
+	issueSummary string
+}
+
+type prCreatedMsg struct {
+	pr *api.PullRequest
+}
+
 // --- Commands ---
 
 func fetchIssueCmd(client *api.Client, key string) tea.Cmd {
@@ -957,4 +968,42 @@ func parseDiff(diffStr string) []api.DiffHunk {
 		hunks = append(hunks, *current)
 	}
 	return hunks
+}
+
+// loadBranchesCmd fetches the list of branches from Azure DevOps in preparation for creating a PR.
+func loadBranchesCmd(client *api.AzdoClient, issueKey, issueSummary string) tea.Cmd {
+	return func() tea.Msg {
+		repoName := client.RepoName()
+		if repoName == "" {
+			repos, err := client.ListRepos()
+			if err != nil {
+				return errMsg{fmt.Errorf("listing repositories: %w", err)}
+			}
+			if len(repos) == 0 {
+				return errMsg{fmt.Errorf("no repositories found in project")}
+			}
+			repoName = repos[0].Name
+		}
+		branches, err := client.ListBranches(repoName)
+		if err != nil {
+			return errMsg{fmt.Errorf("listing branches: %w", err)}
+		}
+		return branchesLoadedMsg{
+			branches:     branches,
+			repoName:     repoName,
+			issueKey:     issueKey,
+			issueSummary: issueSummary,
+		}
+	}
+}
+
+// createPRCmd creates a new pull request in Azure DevOps.
+func createPRCmd(client *api.AzdoClient, repoName, title, description, sourceBranch, targetBranch string) tea.Cmd {
+	return func() tea.Msg {
+		pr, err := client.CreatePullRequest(repoName, title, description, sourceBranch, targetBranch)
+		if err != nil {
+			return errMsg{err}
+		}
+		return prCreatedMsg{pr: pr}
+	}
 }
