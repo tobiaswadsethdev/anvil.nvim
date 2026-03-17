@@ -251,6 +251,15 @@ func clampBlockHeight(block string, height int) []string {
 	for len(raw) > 0 && raw[len(raw)-1] == "" {
 		raw = raw[:len(raw)-1]
 	}
+	if len(raw) > height {
+		if height == 1 {
+			return []string{raw[0]}
+		}
+		lines := make([]string, 0, height)
+		lines = append(lines, raw[:height-1]...)
+		lines = append(lines, raw[len(raw)-1])
+		return lines
+	}
 	lines := make([]string, 0, height)
 	for i := 0; i < height; i++ {
 		if i < len(raw) {
