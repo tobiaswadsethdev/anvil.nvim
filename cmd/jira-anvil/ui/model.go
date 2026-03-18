@@ -723,6 +723,28 @@ func (m Model) renderOverlay(base, modal string) string {
 			lines: baseNorm[:modalY],
 		})
 	}
+	if modalX > 0 {
+		leftLines := make([]string, modalH)
+		for i := 0; i < modalH; i++ {
+			leftLines[i] = baseNorm[modalY+i][:modalX]
+		}
+		blocks = append(blocks, positionedBlock{
+			rect:  Rect{X: 0, Y: modalY, W: modalX, H: modalH},
+			lines: leftLines,
+		})
+	}
+	rightX := modalX + modalW
+	if rightX < m.width {
+		rightW := m.width - rightX
+		rightLines := make([]string, modalH)
+		for i := 0; i < modalH; i++ {
+			rightLines[i] = baseNorm[modalY+i][rightX:]
+		}
+		blocks = append(blocks, positionedBlock{
+			rect:  Rect{X: rightX, Y: modalY, W: rightW, H: modalH},
+			lines: rightLines,
+		})
+	}
 	bottomY := modalY + modalH
 	if bottomY < m.height {
 		blocks = append(blocks, positionedBlock{
