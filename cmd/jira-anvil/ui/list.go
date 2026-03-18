@@ -224,6 +224,7 @@ func (m ListModel) view() string {
 			keyStyle.Render("r") + " refresh  " +
 			keyStyle.Render("n") + " new  " +
 			keyStyle.Render("o") + " browser  " +
+			keyStyle.Render("?") + " help  " +
 			keyStyle.Render("q") + " quit",
 	)
 

@@ -362,16 +362,7 @@ func (m DetailModel) view() string {
 	}
 
 	helpBar := helpStyle.Width(m.width).Height(1).MaxHeight(1).Render(
-		"  " + keyStyle.Render("Tab/S-Tab") + " panel  " +
-			keyStyle.Render("1-"+fmt.Sprintf("%d", m.numPanels())) + " jump  " +
-			keyStyle.Render("[/]") + " tab  " +
-			keyStyle.Render("↑/↓") + " scroll  " +
-			keyStyle.Render("t") + " transition  " +
-			keyStyle.Render("c") + " comment  " +
-			keyStyle.Render("a") + " assign  " +
-			keyStyle.Render("e") + " edit  " +
-			keyStyle.Render("o") + " browser  " +
-			keyStyle.Render("q") + " back",
+		m.helpBarText(),
 	)
 	rects := computeDetailRects(m.width, m.height, m.hasPR)
 
@@ -404,6 +395,39 @@ func (m DetailModel) view() string {
 		},
 	)
 	return lipgloss.JoinVertical(lipgloss.Left, row, helpBar)
+}
+
+func (m DetailModel) helpBarText() string {
+	parts := []string{
+		"  " + keyStyle.Render("Tab/S-Tab") + " panel",
+		keyStyle.Render("1-"+fmt.Sprintf("%d", m.numPanels())) + " jump",
+		keyStyle.Render("[/]") + " tab",
+		keyStyle.Render("↑/↓") + " scroll",
+		keyStyle.Render("r") + " refresh",
+		keyStyle.Render("t") + " transition",
+		keyStyle.Render("c") + " comment",
+		keyStyle.Render("a") + " assign",
+		keyStyle.Render("e") + " edit",
+	}
+
+	if m.hasPR {
+		if m.prModel.pr != nil {
+			parts = append(parts,
+				keyStyle.Render("v")+" vote",
+				keyStyle.Render("y")+" copy PR",
+			)
+		} else if m.prModel.notFound {
+			parts = append(parts, keyStyle.Render("p")+" create PR")
+		}
+	}
+
+	parts = append(parts,
+		keyStyle.Render("o")+" browser",
+		keyStyle.Render("?")+" help",
+		keyStyle.Render("q")+" back",
+	)
+
+	return strings.Join(parts, "  ")
 }
 
 func (m DetailModel) renderIssueInfoPanel(outerW, outerH int, active bool) string {
