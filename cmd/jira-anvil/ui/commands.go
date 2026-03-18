@@ -88,10 +88,11 @@ type execCreateEditorMsg struct {
 }
 
 type branchesLoadedMsg struct {
-	branches     []string
-	repoName     string
-	issueKey     string
-	issueSummary string
+	branches      []string
+	repoName      string
+	issueKey      string
+	issueSummary  string
+	currentBranch string
 }
 
 type prCreatedMsg struct {
@@ -510,34 +511,34 @@ func MakeExecCreateEditorCmd(msg execCreateEditorMsg) tea.Cmd {
 
 // systemFieldsToSkip are fields that are auto-set by Jira or already handled elsewhere.
 var systemFieldsToSkip = map[string]bool{
-	"project":         true,
-	"issuetype":       true,
-	"status":          true,
-	"created":         true,
-	"updated":         true,
-	"creator":         true,
-	"reporter":        true,
-	"lastViewed":      true,
-	"watches":         true,
-	"votes":           true,
-	"worklog":         true,
-	"timetracking":    true,
-	"attachment":      true,
-	"subtasks":        true,
-	"issuelinks":      true,
-	"comment":         true,
-	"thumbnail":       true,
-	"aggregateprogress": true,
-	"progress":        true,
-	"timespent":       true,
-	"aggregatetimespent": true,
-	"timeestimate":    true,
-	"aggregatetimeestimate": true,
+	"project":                       true,
+	"issuetype":                     true,
+	"status":                        true,
+	"created":                       true,
+	"updated":                       true,
+	"creator":                       true,
+	"reporter":                      true,
+	"lastViewed":                    true,
+	"watches":                       true,
+	"votes":                         true,
+	"worklog":                       true,
+	"timetracking":                  true,
+	"attachment":                    true,
+	"subtasks":                      true,
+	"issuelinks":                    true,
+	"comment":                       true,
+	"thumbnail":                     true,
+	"aggregateprogress":             true,
+	"progress":                      true,
+	"timespent":                     true,
+	"aggregatetimespent":            true,
+	"timeestimate":                  true,
+	"aggregatetimeestimate":         true,
 	"aggregatetimeoriginalestimate": true,
-	"timeoriginalestimate": true,
-	"workratio":       true,
-	"resolutiondate":  true,
-	"resolution":      true,
+	"timeoriginalestimate":          true,
+	"workratio":                     true,
+	"resolutiondate":                true,
+	"resolution":                    true,
 }
 
 // generateIssueTemplate produces an annotated YAML template for all fields available
@@ -988,11 +989,16 @@ func loadBranchesCmd(client *api.AzdoClient, issueKey, issueSummary string) tea.
 		if err != nil {
 			return errMsg{fmt.Errorf("listing branches: %w", err)}
 		}
+		currentBranch, err := detectCurrentBranch()
+		if err != nil {
+			currentBranch = ""
+		}
 		return branchesLoadedMsg{
-			branches:     branches,
-			repoName:     repoName,
-			issueKey:     issueKey,
-			issueSummary: issueSummary,
+			branches:      branches,
+			repoName:      repoName,
+			issueKey:      issueKey,
+			issueSummary:  issueSummary,
+			currentBranch: currentBranch,
 		}
 	}
 }
@@ -1000,10 +1006,52 @@ func loadBranchesCmd(client *api.AzdoClient, issueKey, issueSummary string) tea.
 // createPRCmd creates a new pull request in Azure DevOps.
 func createPRCmd(client *api.AzdoClient, repoName, title, description, sourceBranch, targetBranch string) tea.Cmd {
 	return func() tea.Msg {
+		sourceBranch = normalizeShortBranchName(sourceBranch)
+		targetBranch = normalizeShortBranchName(targetBranch)
+		if sourceBranch == "" {
+			return errMsg{fmt.Errorf("source branch is required")}
+		}
+		if targetBranch == "" {
+			return errMsg{fmt.Errorf("target branch is required")}
+		}
+
+		branches, err := client.ListBranches(repoName)
+		if err != nil {
+			return errMsg{fmt.Errorf("listing branches: %w", err)}
+		}
+		branchSet := make(map[string]struct{}, len(branches))
+		for _, branch := range branches {
+			branchSet[normalizeShortBranchName(branch)] = struct{}{}
+		}
+		if _, ok := branchSet[sourceBranch]; !ok {
+			return errMsg{fmt.Errorf("source branch %q does not exist in repo %q", sourceBranch, repoName)}
+		}
+		if _, ok := branchSet[targetBranch]; !ok {
+			return errMsg{fmt.Errorf("target branch %q does not exist in repo %q", targetBranch, repoName)}
+		}
+
 		pr, err := client.CreatePullRequest(repoName, title, description, sourceBranch, targetBranch)
 		if err != nil {
 			return errMsg{err}
 		}
 		return prCreatedMsg{pr: pr}
 	}
+}
+
+func detectCurrentBranch() (string, error) {
+	out, err := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD").Output()
+	if err != nil {
+		return "", err
+	}
+	branch := strings.TrimSpace(string(out))
+	if branch == "" || branch == "HEAD" {
+		return "", fmt.Errorf("detached HEAD")
+	}
+	return branch, nil
+}
+
+func normalizeShortBranchName(branch string) string {
+	branch = strings.TrimSpace(branch)
+	branch = strings.TrimPrefix(branch, "refs/heads/")
+	return branch
 }

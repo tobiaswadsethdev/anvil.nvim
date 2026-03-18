@@ -230,7 +230,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.list.spinner.Tick, m.list.fetchCmd())
 
 	case branchesLoadedMsg:
-		m.createPR = NewCreatePRModel(msg.branches, msg.repoName, msg.issueKey, msg.issueSummary)
+		m.createPR = NewCreatePRModel(msg.branches, msg.repoName, msg.issueKey, msg.issueSummary, msg.currentBranch)
 		m.state = StateCreatePR
 		return m, m.createPR.Init()
 

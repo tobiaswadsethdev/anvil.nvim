@@ -271,7 +271,7 @@ When no pull request is found for the current issue, press `p` in the issue deta
 
 **Step 1 — Title** — Enter the PR title. Pre-filled with the Jira issue summary. Press `Enter` to advance or `Esc` to cancel.
 
-**Step 2 — Source branch** — Enter the source branch name (the feature branch to merge from). Pre-filled with the issue key as a starting point. Press `Enter` to advance or `Esc` to go back.
+**Step 2 — Source branch** — Enter the source branch name (the feature branch to merge from). Pre-filled with your current local git branch when available, otherwise the issue key. Press `Enter` to advance or `Esc` to go back.
 
 **Step 3 — Target branch** — Select the target branch (the branch to merge into) from a searchable list fetched from Azure DevOps. The list defaults to `main` or `master` when present. Navigate with `j` / `k`, type to filter, press `Enter` to advance, `Esc` to go back.
 

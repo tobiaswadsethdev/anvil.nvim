@@ -62,7 +62,7 @@ func (m TransitionModel) update(msg tea.Msg, client *api.Client) (TransitionMode
 
 func (m TransitionModel) view() string {
 	var sb strings.Builder
-	sb.WriteString(modalTitleStyle.Render("Transition Issue: " + m.issueKey) + "\n\n")
+	sb.WriteString(modalTitleStyle.Render("Transition Issue: "+m.issueKey) + "\n\n")
 
 	for i, t := range m.transitions {
 		num := fmt.Sprintf("%d. ", i+1)
@@ -126,7 +126,7 @@ func (m CommentModel) update(msg tea.Msg, client *api.Client) (CommentModel, tea
 
 func (m CommentModel) view() string {
 	var sb strings.Builder
-	sb.WriteString(modalTitleStyle.Render("Add Comment: " + m.issueKey) + "\n\n")
+	sb.WriteString(modalTitleStyle.Render("Add Comment: "+m.issueKey) + "\n\n")
 	sb.WriteString(m.textarea.View())
 	sb.WriteString("\n\n" + helpStyle.Render(
 		keyStyle.Render("Ctrl+S")+" submit  "+keyStyle.Render("Esc")+" cancel",
@@ -138,11 +138,11 @@ func (m CommentModel) view() string {
 
 // AssignModel handles assigning an issue to a user.
 type AssignModel struct {
-	users     []api.User
-	filtered  []api.User
-	issueKey  string
-	cursor    int
-	search    textinput.Model
+	users    []api.User
+	filtered []api.User
+	issueKey string
+	cursor   int
+	search   textinput.Model
 }
 
 func NewAssignModel(users []api.User, issueKey string) AssignModel {
@@ -215,7 +215,7 @@ func (m *AssignModel) filterUsers() {
 
 func (m AssignModel) view() string {
 	var sb strings.Builder
-	sb.WriteString(modalTitleStyle.Render("Assign Issue: " + m.issueKey) + "\n\n")
+	sb.WriteString(modalTitleStyle.Render("Assign Issue: "+m.issueKey) + "\n\n")
 	sb.WriteString(m.search.View() + "\n\n")
 
 	maxVisible := 8
@@ -233,7 +233,7 @@ func (m AssignModel) view() string {
 		realIdx := start + i
 		label := u.DisplayName
 		if u.EmailAddress != "" {
-			label += lipgloss.NewStyle().Foreground(colorMuted).Render(" <"+u.EmailAddress+">")
+			label += lipgloss.NewStyle().Foreground(colorMuted).Render(" <" + u.EmailAddress + ">")
 		}
 		if realIdx == m.cursor {
 			sb.WriteString(selectedItemStyle.Render("  "+label) + "\n")
@@ -785,7 +785,7 @@ func (m CreateIssueTypeModel) view() string {
 		num := fmt.Sprintf("%d. ", i+1)
 		label := num + t.Name
 		if t.Description != "" {
-			label += lipgloss.NewStyle().Foreground(colorMuted).Render("  "+t.Description)
+			label += lipgloss.NewStyle().Foreground(colorMuted).Render("  " + t.Description)
 		}
 		if i == m.cursor {
 			sb.WriteString(selectedItemStyle.Render(label) + "\n")
@@ -837,7 +837,7 @@ type CreatePRModel struct {
 }
 
 // NewCreatePRModel creates the create-PR modal pre-populated from the current issue.
-func NewCreatePRModel(branches []string, repoName, issueKey, issueSummary string) CreatePRModel {
+func NewCreatePRModel(branches []string, repoName, issueKey, issueSummary, currentBranch string) CreatePRModel {
 	title := textinput.New()
 	title.Placeholder = "Pull request title"
 	title.SetValue(issueSummary)
@@ -846,7 +846,11 @@ func NewCreatePRModel(branches []string, repoName, issueKey, issueSummary string
 
 	source := textinput.New()
 	source.Placeholder = "e.g. feature/" + issueKey
-	source.SetValue(issueKey)
+	sourceDefault := strings.TrimSpace(currentBranch)
+	if sourceDefault == "" {
+		sourceDefault = issueKey
+	}
+	source.SetValue(sourceDefault)
 	source.Width = 60
 
 	bs := textinput.New()

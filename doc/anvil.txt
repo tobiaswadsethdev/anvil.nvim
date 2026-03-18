@@ -291,6 +291,7 @@ Create PR modal (multi-step, available via p when no PR exists):~
     Esc         Cancel
   Step 2 — source branch:
     (type)      Enter the source (feature) branch name
+               (prefilled from current local git branch when available)
     Enter       Advance to next step
     Esc         Back to step 1
   Step 3 — target branch:

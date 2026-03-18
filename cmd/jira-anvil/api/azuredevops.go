@@ -195,6 +195,14 @@ func (c *AzdoClient) CreatePullRequest(repoName, title, description, sourceBranc
 	if repoName == "" {
 		repoName = c.repo
 	}
+	sourceBranch = normalizeShortBranchName(sourceBranch)
+	targetBranch = normalizeShortBranchName(targetBranch)
+	if sourceBranch == "" {
+		return nil, fmt.Errorf("source branch is required")
+	}
+	if targetBranch == "" {
+		return nil, fmt.Errorf("target branch is required")
+	}
 	type prRequest struct {
 		Title         string `json:"title"`
 		Description   string `json:"description"`
@@ -223,6 +231,12 @@ func (c *AzdoClient) CreatePullRequest(repoName, title, description, sourceBranc
 	}
 	pr.RepoName = repoName
 	return &pr, nil
+}
+
+func normalizeShortBranchName(branch string) string {
+	branch = strings.TrimSpace(branch)
+	branch = strings.TrimPrefix(branch, "refs/heads/")
+	return branch
 }
 
 // --- Internal helpers ---
