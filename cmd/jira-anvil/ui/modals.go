@@ -13,6 +13,38 @@ import (
 	"github.com/tobiaswadsethdev/anvil.nvim/cmd/jira-anvil/ui/adf"
 )
 
+// --- HelpModel ---
+
+// HelpModel renders a simple keyboard-help modal.
+type HelpModel struct {
+	title   string
+	content string
+}
+
+func NewHelpModel(title, content string) HelpModel {
+	return HelpModel{title: title, content: content}
+}
+
+// update returns the updated model and done=true when the modal should close.
+func (m HelpModel) update(msg tea.KeyMsg) (HelpModel, bool) {
+	switch msg.String() {
+	case "q", "esc", "?", "enter":
+		return m, true
+	}
+	return m, false
+}
+
+func (m HelpModel) view() string {
+	var sb strings.Builder
+	sb.WriteString(modalTitleStyle.Render(m.title) + "\n\n")
+	sb.WriteString(m.content)
+	sb.WriteString("\n\n" + helpStyle.Render(
+		keyStyle.Render("Esc")+" close  "+
+			keyStyle.Render("?")+" close",
+	))
+	return modalStyle.Render(sb.String())
+}
+
 // --- TransitionModel ---
 
 // TransitionModel shows available workflow transitions.

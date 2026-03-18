@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -25,6 +26,7 @@ const (
 	StateCreateProject                // project picker for new issue
 	StateCreateIssueType              // issue type picker for new issue
 	StateCreatePR                     // create pull request modal
+	StateHelp                         // help modal
 )
 
 // createIssueCtx holds the accumulated context during the multi-step issue creation flow.
@@ -60,6 +62,8 @@ type Model struct {
 	createIssueType CreateIssueTypeModel
 	createCtx       createIssueCtx
 	createPR        CreatePRModel
+	help            HelpModel
+	helpReturnState State
 }
 
 // --- Messages ---
@@ -281,6 +285,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleCreateIssueTypeKey(msg)
 	case StateCreatePR:
 		return m.handleCreatePRKey(msg)
+	case StateHelp:
+		return m.handleHelpKey(msg)
 	}
 	return m, nil
 }
@@ -316,7 +322,9 @@ func (m Model) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "?":
-		m.statusMsg = listHelp
+		m.help = NewHelpModel("Issue List Help", listHelpText)
+		m.helpReturnState = StateList
+		m.state = StateHelp
 		return m, nil
 	}
 
@@ -424,7 +432,9 @@ func (m Model) handleDetailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "?":
-		m.statusMsg = detailHelp
+		m.help = NewHelpModel("Issue Detail Help", detailHelpText(m.detail.hasPR, m.detail.prModel.pr != nil, m.detail.prModel.notFound))
+		m.helpReturnState = StateDetail
+		m.state = StateHelp
 		return m, nil
 	}
 
@@ -618,6 +628,15 @@ func (m Model) handleCreatePRKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) handleHelpKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	var done bool
+	m.help, done = m.help.update(msg)
+	if done {
+		m.state = m.helpReturnState
+	}
+	return m, nil
+}
+
 func (m Model) reloadDetail() (tea.Model, tea.Cmd) {
 	if m.detail.issue == nil || m.detail.issue.Key == "" {
 		m.state = StateList
@@ -653,6 +672,12 @@ func (m Model) View() string {
 		return m.renderOverlay(m.list.view(), m.createIssueType.view())
 	case StateCreatePR:
 		return m.renderOverlay(m.detail.view(), m.createPR.view())
+	case StateHelp:
+		base := m.list.view()
+		if m.helpReturnState == StateDetail {
+			base = m.detail.view()
+		}
+		return m.renderOverlay(base, m.help.view())
 	}
 	return ""
 }
@@ -716,3 +741,42 @@ func (m Model) renderOverlay(base, modal string) string {
 // Help strings
 const listHelp = "↑/↓: navigate  Enter: open  [/]: cycle filter  r: refresh  n: new issue  o: browser  q: quit"
 const detailHelp = "Tab/S-Tab: panel  1-4: jump  [/]: tab  ↑/↓: scroll  t: transition  c: comment (Jira/PR)  a: assign  e: edit  v: vote (PR)  y: copy PR link  p: create PR (when no PR)  o: browser  q: back"
+
+const listHelpText = "Navigation:\n  ↑/↓        Move selection\n  Enter      Open selected issue\n\nActions:\n  [/]        Cycle filter\n  r          Refresh issues\n  n          Create new issue\n  o          Open issue in browser\n\nOther:\n  ?          Show this help\n  q          Quit"
+
+func detailHelpText(hasPR bool, hasLoadedPR bool, prNotFound bool) string {
+	lines := []string{
+		"Navigation:",
+		"  Tab/S-Tab  Switch focused panel",
+		"  1-4        Jump to panel",
+		"  [/]        Switch tabs in focused panel",
+		"  ↑/↓        Scroll focused panel",
+		"  r          Refresh issue/PR data",
+		"",
+		"Actions:",
+		"  t          Transition issue",
+		"  c          Add comment",
+		"  a          Assign issue",
+		"  e          Edit issue",
+	}
+
+	if hasPR && hasLoadedPR {
+		lines = append(lines,
+			"  v          Vote on pull request",
+			"  y          Copy PR link",
+		)
+	}
+	if hasPR && prNotFound {
+		lines = append(lines, "  p          Create pull request")
+	}
+
+	lines = append(lines,
+		"",
+		"Other:",
+		"  o          Open Jira issue in browser",
+		"  ?          Show this help",
+		"  q / Esc    Back to issue list",
+	)
+
+	return strings.Join(lines, "\n")
+}
