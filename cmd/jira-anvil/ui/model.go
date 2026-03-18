@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/tobiaswadsethdev/anvil.nvim/cmd/jira-anvil/api"
 	"github.com/tobiaswadsethdev/anvil.nvim/cmd/jira-anvil/config"
 )
@@ -726,7 +727,7 @@ func (m Model) renderOverlay(base, modal string) string {
 	if modalX > 0 {
 		leftLines := make([]string, modalH)
 		for i := 0; i < modalH; i++ {
-			leftLines[i] = baseNorm[modalY+i][:modalX]
+			leftLines[i] = ansi.Cut(baseNorm[modalY+i], 0, modalX)
 		}
 		blocks = append(blocks, positionedBlock{
 			rect:  Rect{X: 0, Y: modalY, W: modalX, H: modalH},
@@ -738,7 +739,7 @@ func (m Model) renderOverlay(base, modal string) string {
 		rightW := m.width - rightX
 		rightLines := make([]string, modalH)
 		for i := 0; i < modalH; i++ {
-			rightLines[i] = baseNorm[modalY+i][rightX:]
+			rightLines[i] = ansi.Cut(baseNorm[modalY+i], rightX, m.width)
 		}
 		blocks = append(blocks, positionedBlock{
 			rect:  Rect{X: rightX, Y: modalY, W: rightW, H: modalH},
