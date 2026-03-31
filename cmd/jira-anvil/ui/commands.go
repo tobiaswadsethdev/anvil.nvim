@@ -983,7 +983,16 @@ func loadBranchesCmd(client *api.AzdoClient, issueKey, issueSummary string) tea.
 			if len(repos) == 0 {
 				return errMsg{fmt.Errorf("no repositories found in project")}
 			}
-			repoName = repos[0].Name
+			repoName = repos[0].Name // fallback: first repo alphabetically
+			detectedRepo := detectCurrentRepo()
+			if detectedRepo != "" {
+				for _, r := range repos {
+					if strings.EqualFold(r.Name, detectedRepo) {
+						repoName = r.Name
+						break
+					}
+				}
+			}
 		}
 		branches, err := client.ListBranches(repoName)
 		if err != nil {
@@ -1036,6 +1045,27 @@ func createPRCmd(client *api.AzdoClient, repoName, title, description, sourceBra
 		}
 		return prCreatedMsg{pr: pr}
 	}
+}
+
+// detectCurrentRepo attempts to determine the Azure DevOps repository name from
+// the current git remote URL. It parses the segment after "/_git/" in the URL.
+// Returns an empty string if detection fails for any reason.
+func detectCurrentRepo() string {
+	out, err := exec.Command("git", "remote", "get-url", "origin").Output()
+	if err != nil {
+		return ""
+	}
+	rawURL := strings.TrimSpace(string(out))
+	// Azure DevOps URLs contain /_git/{repo}
+	parts := strings.SplitN(rawURL, "/_git/", 2)
+	if len(parts) != 2 {
+		return ""
+	}
+	repoName := strings.TrimSpace(parts[1])
+	// Strip query parameters and optional .git suffix
+	repoName = strings.Split(repoName, "?")[0]
+	repoName = strings.TrimSuffix(repoName, ".git")
+	return repoName
 }
 
 func detectCurrentBranch() (string, error) {
